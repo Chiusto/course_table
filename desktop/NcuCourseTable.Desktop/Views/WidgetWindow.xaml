@@ -1,0 +1,74 @@
+<Window x:Class="NcuCourseTable.Desktop.Views.WidgetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NcuCourseTable.DesktopWidget"
+        Width="372" Height="352"
+        WindowStyle="None" ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
+        Topmost="False" WindowStartupLocation="Manual"
+        FontFamily="Microsoft YaHei UI"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
+        MouseLeftButtonDown="OnDragStart" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd">
+    <!-- AllowsTransparency/Background 由 code-behind 按宿主类型在 InitializeComponent 前设置：
+         wallpaper 模式必须非分层（WS_EX_LAYERED 子窗口不被 DWM 合成，屏幕上看不到） -->
+    <Border x:Name="Card" CornerRadius="16" Padding="14,12,14,12"
+            Background="#E51B2434"
+            BorderBrush="#38FFFFFF" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ============ 头部：学期 + 教学周 pill ============ -->
+            <Grid Grid.Row="0" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="TermText" Text="课表" FontSize="13"
+                               FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+                    <Border x:Name="WeekPill" CornerRadius="9" Background="#3D5B8CFF"
+                            Padding="7,1.5" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="WeekText" Text="第 6 / 20 周" FontSize="10.5"
+                                   Foreground="White" FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
+                <TextBlock x:Name="DateText" Text="9月4日 周五" Grid.Column="1"
+                           FontSize="11" Foreground="#A8B4C6" VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- ============ 本周上课密度点阵（周1..7） ============ -->
+            <StackPanel x:Name="WeekDots" Grid.Row="1" Orientation="Horizontal"
+                        Margin="0,0,0,9">
+                <!-- code-behind 填充 7 个圆点 -->
+            </StackPanel>
+
+            <!-- ============ 今日课程 ============ -->
+            <Grid Grid.Row="2" Margin="0,0,0,6">
+                <TextBlock Text="今日课程" FontSize="11" Foreground="#8FA0B8"/>
+                <TextBlock x:Name="TodayCountText" HorizontalAlignment="Right"
+                           FontSize="10.5" Foreground="#5E6E85"/>
+            </Grid>
+
+            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="TodayList" Margin="0,0,0,2"/>
+            </ScrollViewer>
+
+            <TextBlock x:Name="TodayEmpty" Grid.Row="3" Text="今日无课 · 好好休息"
+                       Foreground="#7C8CA3" FontSize="12.5" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Visibility="Collapsed"/>
+
+            <!-- ============ 下一节 ============ -->
+            <Border x:Name="NextPill" Grid.Row="4" CornerRadius="10" Background="#26FFFFFF"
+                    Padding="10,6" Margin="0,6,0,0">
+                <TextBlock x:Name="NextText" Text="下一节：--"
+                           FontSize="11.5" Foreground="#D4DCE8" TextTrimming="CharacterEllipsis"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

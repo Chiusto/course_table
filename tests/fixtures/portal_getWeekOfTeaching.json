@@ -1,0 +1,11 @@
+{
+  "_source": "docs/API_SPEC.md 3.5 getWeekOfTeaching（date 为 -1 表示未开学）",
+  "code": 0,
+  "data": {
+    "code": 0,
+    "data": {
+      "semester": "1",
+      "date": [-1]
+    }
+  }
+}

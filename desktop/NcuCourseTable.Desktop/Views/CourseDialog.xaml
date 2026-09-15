@@ -1,0 +1,68 @@
+<Window x:Class="NcuCourseTable.Desktop.Views.CourseDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="课程"
+        Width="500" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        FontFamily="Microsoft YaHei UI" FontSize="13" Background="White">
+    <Grid Margin="18,14,18,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 名称 -->
+        <TextBlock Grid.Row="0" Text="课程名称 *" Foreground="#6B707A" Margin="0,0,0,4"/>
+        <TextBox x:Name="NameBox" Grid.Row="1" Padding="6,4" Margin="0,0,0,10" FontSize="14"/>
+
+        <!-- 教师 / 地点 -->
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="1*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="教师" Foreground="#6B707A" Margin="0,0,0,4"/>
+                <TextBox x:Name="TeacherBox" Padding="6,4"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="地点 / 教室" Foreground="#6B707A" Margin="0,0,0,4"/>
+                <TextBox x:Name="RoomBox" Padding="6,4" ToolTip="填写含校区的楼栋教室，如：前湖北校区研究生院316，可被“地图搜索”直接使用"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- 星期 / 节次 -->
+        <Grid Grid.Row="3" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="1*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="上课日" Foreground="#6B707A" Margin="0,0,0,4"/>
+                <ComboBox x:Name="DayBox" Padding="4,2"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="起始节次" Foreground="#6B707A" Margin="0,0,0,4"/>
+                <ComboBox x:Name="StartBox" Padding="4,2"/>
+            </StackPanel>
+            <StackPanel Grid.Column="4">
+                <TextBlock Text="结束节次" Foreground="#6B707A" Margin="0,0,0,4"/>
+                <ComboBox x:Name="EndBox" Padding="4,2"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- 周次 -->
+        <TextBlock Grid.Row="4" Text="周次表达式" Foreground="#6B707A" Margin="0,0,0,4"/>
+        <TextBox x:Name="WeeksBox" Grid.Row="5" Padding="6,4" Margin="0,0,0,6"
+                 Text="1-16周" ToolTip="支持：1-16周（连续）、6-6周（单周）、1-9周(单)、2-10周(双)、1,3,5周、1-8周,10-12周"/>
+        <TextBlock x:Name="HintText" Grid.Row="6" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="CancelBtn" Content="取消" Width="76" Margin="0,0,10,0"
+                    Padding="0,5" IsCancel="True"/>
+            <Button x:Name="OkBtn" Content="保存" Width="76" Padding="0,5" IsDefault="True"
+                    Click="OnSave" Background="#2F6FED" Foreground="White" BorderThickness="0"/>
+        </StackPanel>
+    </Grid>
+</Window>

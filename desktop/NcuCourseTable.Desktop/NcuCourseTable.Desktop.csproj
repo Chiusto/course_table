@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>NcuCourseTable.Desktop</RootNamespace>
+    <AssemblyName>NcuCourseTable.Desktop</AssemblyName>
+    <Product>南昌大学课程表组件</Product>
+    <AssemblyTitle>Ncu Course Table Widget</AssemblyTitle>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- 仅托盘使用 WinForms：移除其隐式全局 using，避免 Brush/ComboBox/Application 与 WPF 二义 -->
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

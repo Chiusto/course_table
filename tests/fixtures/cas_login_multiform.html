@@ -1,0 +1,41 @@
+<form style="display: none;" method="post" id="fm9" action="login">
+  <input type="hidden" name="drcomUsername" value=""/>
+  <input type="hidden" name="execution" value="EXEC-DRCOM-111"/>
+  <input type="hidden" name="_eventId" value="submitDrcomIPLogin"/>
+  <input type="hidden" name="geolocation"/>
+  <input type="hidden" name="fpVisitorId"/>
+  <input type="hidden" name="username" value="auto"/>
+</form>
+
+<form method="post" id="fm1" action="login" style="display: none;">
+  <input type="hidden" id="username" name="username" value="" autocomplete="off"/>
+  <input type="hidden" id="password" name="password" value="" autocomplete="off"/>
+  <input type="hidden" id="captcha" name="captcha" value="" autocomplete="new-captcha"/>
+  <input type="checkbox" id="rememberMe" name="rememberMe" v-model="passwordLoginRememberMe"/>
+  <input type="hidden" name="currentMenu" value="1"/>
+  <input type="hidden" name="failN" value="-1"/>
+  <input type="hidden" name="mfaState" value=""/>
+  <input type="hidden" name="execution" value="EXEC-FM1-222"/>
+  <input type="hidden" name="_eventId" value="submit"/>
+  <input type="hidden" name="geolocation"/>
+  <input type="hidden" name="fpVisitorId"/>
+  <input type="hidden" name="trustAgent" value=""/>
+</form>
+
+<form method="post" id="fm2" action="login" style="display: none;">
+  <input type="hidden" id="username" name="username" value="" autocomplete="off"/>
+  <input type="hidden" id="password" name="password" value="" autocomplete="off"/>
+  <input type="hidden" name="currentMenu" value="3"/>
+  <input type="hidden" name="failN" value="-1"/>
+  <input type="hidden" name="execution" value="EXEC-FM2-333"/>
+  <input type="hidden" name="_eventId" value="submitPasswordlessToken"/>
+  <input type="hidden" name="geolocation"/>
+  <input type="hidden" name="fpVisitorId"/>
+  <input type="hidden" name="trustAgent" value=""/>
+</form>
+
+<div id="loginError1">
+  <div>
+    <el-alert title="账号或密码错误。" type="error" show-icon></el-alert>
+  </div>
+</div>

@@ -1,0 +1,194 @@
+{
+  "Version": 1,
+  "Termcode": "202620271",
+  "TermName": "2026-2027学年第1学期",
+  "TermStart": "2026-08-31",
+  "TotalWeeks": 20,
+  "Sections": [
+    {
+      "Index": 1,
+      "Label": "一",
+      "Start": "08:00",
+      "End": "08:40",
+      "Display": "第一节 08:00~08:40"
+    },
+    {
+      "Index": 2,
+      "Label": "二",
+      "Start": "08:50",
+      "End": "09:30",
+      "Display": "第二节 08:50~09:30"
+    },
+    {
+      "Index": 3,
+      "Label": "三",
+      "Start": "09:50",
+      "End": "10:30",
+      "Display": "第三节 09:50~10:30"
+    },
+    {
+      "Index": 4,
+      "Label": "四",
+      "Start": "10:40",
+      "End": "11:20",
+      "Display": "第四节 10:40~11:20"
+    },
+    {
+      "Index": 5,
+      "Label": "五",
+      "Start": "11:30",
+      "End": "12:10",
+      "Display": "第五节 11:30~12:10"
+    },
+    {
+      "Index": 6,
+      "Label": "六",
+      "Start": "14:00",
+      "End": "14:40",
+      "Display": "第六节 14:00~14:40"
+    },
+    {
+      "Index": 7,
+      "Label": "七",
+      "Start": "14:50",
+      "End": "15:30",
+      "Display": "第七节 14:50~15:30"
+    },
+    {
+      "Index": 8,
+      "Label": "八",
+      "Start": "15:50",
+      "End": "16:30",
+      "Display": "第八节 15:50~16:30"
+    },
+    {
+      "Index": 9,
+      "Label": "九",
+      "Start": "16:40",
+      "End": "17:20",
+      "Display": "第九节 16:40~17:20"
+    },
+    {
+      "Index": 10,
+      "Label": "十",
+      "Start": "17:30",
+      "End": "18:10",
+      "Display": "第十节 17:30~18:10"
+    },
+    {
+      "Index": 11,
+      "Label": "十一",
+      "Start": "19:00",
+      "End": "19:40",
+      "Display": "第十一节 19:00~19:40"
+    },
+    {
+      "Index": 12,
+      "Label": "十二",
+      "Start": "19:50",
+      "End": "20:30",
+      "Display": "第十二节 19:50~20:30"
+    },
+    {
+      "Index": 13,
+      "Label": "十三",
+      "Start": "20:40",
+      "End": "21:20",
+      "Display": "第十三节 20:40~21:20"
+    }
+  ],
+  "Links": {
+    "portal": "https://portal.ncu.edu.cn",
+    "教务查询": "https://gms.ncu.edu.cn/"
+  },
+  "Courses": [
+    {
+      "Id": "07b69d5985b74dcab305b243259b77b7",
+      "Termcode": "202620271",
+      "Name": "机器学习",
+      "Teacher": "胡书凡",
+      "Room": "前湖北校区研究生院316",
+      "Weekday": 1,
+      "StartSection": 6,
+      "EndSection": 8,
+      "WeeksRaw": "1-11周"
+    },
+    {
+      "Id": "17acab8f9b214238ba8c25fa970e50c0",
+      "Termcode": "202620271",
+      "Name": "高级计算机系统结构",
+      "Teacher": "张宇成",
+      "Room": "前湖北校区研究生院215",
+      "Weekday": 3,
+      "StartSection": 3,
+      "EndSection": 4,
+      "WeeksRaw": "1-16周"
+    },
+    {
+      "Id": "74e538af7a9d430190b7cad73c0e04eb",
+      "Termcode": "202620271",
+      "Name": "数据科学与工程",
+      "Teacher": "王洋洋",
+      "Room": "前湖北校区研究生院316",
+      "Weekday": 3,
+      "StartSection": 8,
+      "EndSection": 10,
+      "WeeksRaw": "1-16周"
+    },
+    {
+      "Id": "c725175680ec44f5a3a1597db368433d",
+      "Termcode": "202620271",
+      "Name": "最优化",
+      "Teacher": "肖艳阳",
+      "Room": "前湖北校区研究生院316",
+      "Weekday": 3,
+      "StartSection": 11,
+      "EndSection": 13,
+      "WeeksRaw": "1-16周"
+    },
+    {
+      "Id": "2d47c993b0f446d1819f70815e75e8cb",
+      "Termcode": "202620271",
+      "Name": "自然辩证法",
+      "Teacher": "康琳",
+      "Room": "前湖北校区研究生院316",
+      "Weekday": 4,
+      "StartSection": 4,
+      "EndSection": 4,
+      "WeeksRaw": "1-8周"
+    },
+    {
+      "Id": "e7d9e3a9cdbd42cc8c6a89ec4062b955",
+      "Termcode": "202620271",
+      "Name": "组合数学A",
+      "Teacher": "幸玮",
+      "Room": "研究生院505",
+      "Weekday": 5,
+      "StartSection": 3,
+      "EndSection": 5,
+      "WeeksRaw": "5-15周"
+    },
+    {
+      "Id": "9232c2e5ce354c208500b62482e5e17a",
+      "Termcode": "202620271",
+      "Name": "工程伦理",
+      "Teacher": "刘韬",
+      "Room": "基础实验大楼A106",
+      "Weekday": 6,
+      "StartSection": 3,
+      "EndSection": 5,
+      "WeeksRaw": "6-6周"
+    },
+    {
+      "Id": "ecf083d0208b4b6780e945b2afe70dea",
+      "Termcode": "202620271",
+      "Name": "工程伦理",
+      "Teacher": "刘韬",
+      "Room": "基础实验大楼A106",
+      "Weekday": 7,
+      "StartSection": 6,
+      "EndSection": 10,
+      "WeeksRaw": "6-6周"
+    }
+  ]
+}

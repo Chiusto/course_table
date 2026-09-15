@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# .NET
+bin/
+obj/
+
+# IDE
+.idea/
+
+# Logs / temp
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.bak*
+
+# Probe / debug artifacts
+.probe_winD/
+.workbuddy/
+
+# Verification screenshots
+desktop/verify_*.png
+desktop/screenshot_*.png
+desktop/desktop_live_*.png
+
+# Runtime data dir（真实课表 / 凭据 / 会话，运行期生成，不入库）
+data/
+
+# 敏感凭据与本地库（防止在其它目录被误提交）
+credentials.bin
+*.db

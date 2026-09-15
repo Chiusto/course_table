@@ -1,0 +1,32 @@
+{
+  "_source": "docs/API_SPEC.md 3.3 getEvents（结构：data.schedule['YYYY-MM-DD'].calendarList[]）",
+  "code": 0,
+  "data": {
+    "schedule": {
+      "2026-09-04": {
+        "calendarList": [
+          {
+            "scheduleId": "1001",
+            "title": "学术报告：大模型推理优化",
+            "startTime": "2026-09-04 14:00",
+            "endTime": "2026-09-04 16:00",
+            "address": "研究生院 316",
+            "calendarName": "学术活动"
+          }
+        ]
+      },
+      "2026-09-05": {
+        "calendarList": [
+          {
+            "scheduleId": "1002",
+            "title": "组会",
+            "startTime": "2026-09-05 19:00",
+            "endTime": "2026-09-05 21:00",
+            "address": "线上",
+            "calendarName": "个人日历"
+          }
+        ]
+      }
+    }
+  }
+}

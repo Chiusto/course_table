@@ -5,70 +5,96 @@
         Width="372" Height="352"
         WindowStyle="None" ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
         Topmost="False" WindowStartupLocation="Manual"
-        FontFamily="Microsoft YaHei UI"
+        FontFamily="{StaticResource AppFont}"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
-        MouseLeftButtonDown="OnDragStart" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd">
+        PreviewMouseLeftButtonDown="OnDragStart"
+        PreviewMouseMove="OnDragMove"
+        PreviewMouseLeftButtonUp="OnDragEnd">
     <!-- AllowsTransparency/Background 由 code-behind 按宿主类型在 InitializeComponent 前设置：
          wallpaper 模式必须非分层（WS_EX_LAYERED 子窗口不被 DWM 合成，屏幕上看不到） -->
-    <Border x:Name="Card" CornerRadius="16" Padding="14,12,14,12"
-            Background="#E51B2434"
-            BorderBrush="#38FFFFFF" BorderThickness="1">
+    <Border x:Name="Card" Margin="8" CornerRadius="22" Padding="16,14,16,14"
+            Background="#D91C1C1E"
+            BorderBrush="#33FFFFFF" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="30" ShadowDepth="0" Opacity="0.32"/>
+        </Border.Effect>
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-
-            <!-- ============ 头部：学期 + 教学周 pill ============ -->
-            <Grid Grid.Row="0" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="TermText" Text="课表" FontSize="13"
-                               FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
-                    <Border x:Name="WeekPill" CornerRadius="9" Background="#3D5B8CFF"
-                            Padding="7,1.5" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="WeekText" Text="第 6 / 20 周" FontSize="10.5"
-                                   Foreground="White" FontWeight="SemiBold"/>
-                    </Border>
-                </StackPanel>
-                <TextBlock x:Name="DateText" Text="9月4日 周五" Grid.Column="1"
-                           FontSize="11" Foreground="#A8B4C6" VerticalAlignment="Center"/>
-            </Grid>
-
-            <!-- ============ 本周上课密度点阵（周1..7） ============ -->
-            <StackPanel x:Name="WeekDots" Grid.Row="1" Orientation="Horizontal"
-                        Margin="0,0,0,9">
-                <!-- code-behind 填充 7 个圆点 -->
-            </StackPanel>
-
-            <!-- ============ 今日课程 ============ -->
-            <Grid Grid.Row="2" Margin="0,0,0,6">
-                <TextBlock Text="今日课程" FontSize="11" Foreground="#8FA0B8"/>
-                <TextBlock x:Name="TodayCountText" HorizontalAlignment="Right"
-                           FontSize="10.5" Foreground="#5E6E85"/>
-            </Grid>
-
-            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
-                <StackPanel x:Name="TodayList" Margin="0,0,0,2"/>
-            </ScrollViewer>
-
-            <TextBlock x:Name="TodayEmpty" Grid.Row="3" Text="今日无课 · 好好休息"
-                       Foreground="#7C8CA3" FontSize="12.5" HorizontalAlignment="Center"
-                       VerticalAlignment="Center" Visibility="Collapsed"/>
-
-            <!-- ============ 下一节 ============ -->
-            <Border x:Name="NextPill" Grid.Row="4" CornerRadius="10" Background="#26FFFFFF"
-                    Padding="10,6" Margin="0,6,0,0">
-                <TextBlock x:Name="NextText" Text="下一节：--"
-                           FontSize="11.5" Foreground="#D4DCE8" TextTrimming="CharacterEllipsis"/>
+            <!-- 玻璃顶部高光 -->
+            <Border CornerRadius="22" IsHitTestVisible="False" Margin="-16,-14,-16,-14">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#18FFFFFF" Offset="0"/>
+                        <GradientStop Color="#00FFFFFF" Offset="0.45"/>
+                    </LinearGradientBrush>
+                </Border.Background>
             </Border>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 头部：学期 + 教学周 pill -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="TermText" Text="课表" FontSize="13.5"
+                                   FontWeight="SemiBold" Foreground="White"
+                                   VerticalAlignment="Center" MaxWidth="170"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <Border x:Name="WeekPill" CornerRadius="9"
+                                Background="#260A84FF" BorderBrush="#400A84FF"
+                                BorderThickness="1" Padding="7,1.5"
+                                Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="WeekText" Text="第 6 / 20 周" FontSize="10"
+                                       Foreground="#D6E9FF" FontWeight="SemiBold"
+                                       Typography.NumeralAlignment="Tabular"/>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock x:Name="DateText" Text="9月4日 周五" Grid.Column="1"
+                               FontSize="11" Foreground="#AEB0B6" VerticalAlignment="Center"
+                               Typography.NumeralAlignment="Tabular"/>
+                </Grid>
+
+                <!-- 本周上课密度点阵（周1..7） -->
+                <StackPanel x:Name="WeekDots" Grid.Row="1" Orientation="Horizontal"
+                            Margin="0,0,0,9">
+                    <!-- code-behind 填充 7 个圆点 -->
+                </StackPanel>
+
+                <!-- 今日课程 -->
+                <Grid Grid.Row="2" Margin="0,0,0,6">
+                    <TextBlock Text="今日课程" FontSize="11" Foreground="#9A9AA0"/>
+                    <TextBlock x:Name="TodayCountText" HorizontalAlignment="Right"
+                               FontSize="10.5" Foreground="#6F6F75"
+                               Typography.NumeralAlignment="Tabular"/>
+                </Grid>
+
+                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="TodayList" Margin="0,0,0,2"/>
+                </ScrollViewer>
+
+                <TextBlock x:Name="TodayEmpty" Grid.Row="3" Text="今日无课 · 好好休息"
+                           Foreground="#8E8E93" FontSize="12.5" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Visibility="Collapsed"/>
+
+                <!-- 下一节 -->
+                <Border x:Name="NextPill" Grid.Row="4" CornerRadius="11" Background="#1FFFFFFF"
+                        BorderBrush="#1AFFFFFF" BorderThickness="1"
+                        Padding="10,7" Margin="0,6,0,0">
+                    <TextBlock x:Name="NextText" Text="下一节：--"
+                               FontSize="11.5" Foreground="#D4D4D8"
+                               TextTrimming="CharacterEllipsis"/>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 </Window>

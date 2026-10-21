@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -35,12 +37,12 @@ public partial class WidgetWindow : Window
     public const string WindowTitle = "NcuCourseTable.DesktopWidget";
     private static readonly string[] DayNames = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
 
-    private static readonly Brush Accent = BrushOf("#4E7FFF");
-    private static readonly Brush OnGoing = BrushOf("#FF9F43");
-    private static readonly Brush RowBarNone = BrushOf("#2A3548");
+    private static readonly Brush Accent = BrushOf("#0A84FF");
+    private static readonly Brush OnGoing = BrushOf("#FF9F0A");
+    private static readonly Brush RowBarNone = BrushOf("#3A3A3C");
     private static readonly Brush TextMain = BrushOf("#FFFFFF");
-    private static readonly Brush TextSub = BrushOf("#9FB0C8");
-    private static readonly Brush TextDim = BrushOf("#7C8CA3");
+    private static readonly Brush TextSub = BrushOf("#B0B0B5");
+    private static readonly Brush TextDim = BrushOf("#8E8E93");
 
     private readonly JsonStore _store;
     private readonly WidgetConfig _cfg;
@@ -54,10 +56,16 @@ public partial class WidgetWindow : Window
     private IntPtr _hwnd;
     private bool _embedded;
 
-    // 拖动状态
-    private Point _dragOrigin;
+    // 拖动状态：屏幕坐标增量保证 1:1 跟手；历史速度用于释放后的动量投影
+    private Point _dragStartScreen;
+    private Point _lastScreen;
     private bool _dragging;
-    private bool _dragMoved;   // 本次按下是否发生过真实拖动（位移超阈值）
+    private bool _dragMoved;
+    private bool _dragEnabled;
+    private readonly List<(double X, double Y, double Ms)> _dragHistory = new();
+    private readonly Stopwatch _dragClock = new();
+    private readonly ScaleTransform _cardScale = new(1, 1);
+    private const double DragThreshold = 6;
 
     // “显示桌面 / 最小化 / 隐藏 / DWM 遮蔽”防消失守卫（bottom 模式）
     private const int GuardIntervalMs = 120;
@@ -92,7 +100,7 @@ public partial class WidgetWindow : Window
         if (_hostKind == DesktopHostKind.WallpaperWorkerW)
         {
             AllowsTransparency = false;
-            Background = new SolidColorBrush(Color.FromRgb(0x1B, 0x24, 0x34));
+            Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x1E));
         }
         else
         {
@@ -101,6 +109,8 @@ public partial class WidgetWindow : Window
         }
 
         InitializeComponent();
+        Card.RenderTransformOrigin = new Point(0.5, 0.5);
+        Card.RenderTransform = _cardScale;
         _store = store;
         _cfg = cfg;
         _sectionMap = store.SectionMap as Dictionary<int, SectionTime>
@@ -126,6 +136,8 @@ public partial class WidgetWindow : Window
                 int pref = 2; // DWMWCP_ROUND
                 Native.DwmSetWindowAttribute(_hwnd, 33, ref pref, sizeof(int)); // DWMWA_WINDOW_CORNER_PREFERENCE
             }
+            // 亚克力按窗口矩形着色，8px 阴影留白会变成方形光晕；
+            // 这里保留半透明玻璃卡片 + 阴影，材质更干净。
         };
 
         Loaded += OnLoaded;
@@ -250,7 +262,7 @@ public partial class WidgetWindow : Window
 
         TodayList.Children.Clear();
         TodayEmpty.Visibility = courses.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        TodayCountText.Text = courses.Count > 0 ? $"共 {courses.Count} 节" : "";
+        TodayCountText.Text = courses.Count > 0 ? $"共 {courses.Count} 门课" : "";
 
         TimeSpan now = DateTime.Now.TimeOfDay;
         foreach (Course c in courses)
@@ -325,7 +337,7 @@ public partial class WidgetWindow : Window
 
         var bar = new Border
         {
-            Width = 4,
+            Width = 3.5,
             CornerRadius = new CornerRadius(2),
             Background = ongoing ? OnGoing : Accent,
             VerticalAlignment = VerticalAlignment.Stretch,
@@ -336,7 +348,7 @@ public partial class WidgetWindow : Window
         {
             Text = c.Name,
             Foreground = TextMain,
-            FontSize = 13.5,
+            FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
@@ -344,15 +356,17 @@ public partial class WidgetWindow : Window
         {
             Text = TimeOf(c),
             Foreground = ongoing ? OnGoing : TextSub,
-            FontSize = 11,
+            FontSize = 10.5,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        System.Windows.Documents.Typography.SetNumeralAlignment(
+            time, System.Windows.FontNumeralAlignment.Tabular);
         var meta = new TextBlock
         {
             Text = Meta(c),
             Foreground = TextDim,
-            FontSize = 11,
+            FontSize = 10.5,
             Margin = new Thickness(0, 2, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
@@ -403,13 +417,17 @@ public partial class WidgetWindow : Window
 
     private static string FormatTerm(StoreData d)
     {
-        if (d.TermName.Length > 0)
-        {
-            return d.TermName.Length > 14 ? d.TermName[..14] + "…" : d.TermName;
-        }
         // 与 JsonStore.FormatTermName 同规则：规范 9 位 termcode 学期号在末位（202620271 -> 第1学期）
-        string name = JsonStore.FormatTermName(d.Termcode);
-        return name == "未命名学期" ? "我的课表" : name;
+        string name = d.TermName.Length > 0 ? d.TermName : JsonStore.FormatTermName(d.Termcode);
+        if (name == "未命名学期") return "我的课表";
+
+        // 宽卡片里优先显示紧凑学期名：2026-2027学年第1学期 → 2026–27 · 第1学期
+        var m = Regex.Match(name, @"^(\d{4})-(\d{4})学年第(\d+)学期$");
+        if (m.Success)
+        {
+            return $"{m.Groups[1].Value}–{m.Groups[2].Value[2..]} · 第{m.Groups[3].Value}学期";
+        }
+        return name.Length > 18 ? name[..18] + "…" : name;
     }
 
     private static Brush BrushOf(string hex)
@@ -428,9 +446,9 @@ public partial class WidgetWindow : Window
         {
             WeekDots.Children.Add(new Ellipse
             {
-                Width = 7,
-                Height = 7,
-                Margin = new Thickness(0, 0, 6, 0),
+                Width = 6,
+                Height = 6,
+                Margin = new Thickness(0, 0, 5, 0),
                 Fill = RowBarNone,
             });
         }
@@ -458,6 +476,13 @@ public partial class WidgetWindow : Window
             StartSurvivalGuard();
         }
 
+        // 材质入场：缩放 + 淡入（reduced-motion 下直接出现）
+        Card.Opacity = 0;
+        Motion.SpringTo(_cardScale, ScaleTransform.ScaleXProperty, 1, 1.0, 0.42, tolerance: 0.0005);
+        Motion.SpringTo(_cardScale, ScaleTransform.ScaleYProperty, 1, 1.0, 0.42, tolerance: 0.0005);
+        Motion.SpringTo(Card, UIElement.OpacityProperty, 1, 1.0, 0.36, tolerance: 0.002);
+        UpdateCursor();
+
         // 透明度恒定由托盘菜单控制（_cfg.Opacity），鼠标悬停不改变。
     }
 
@@ -473,6 +498,7 @@ public partial class WidgetWindow : Window
         _cfg.Locked = locked;
         _cfg.Save(_store.Dir);
         Opacity = locked ? 0.75 : _cfg.Opacity;
+        UpdateCursor();
     }
 
     private void SendToBottomSoon()
@@ -524,23 +550,64 @@ public partial class WidgetWindow : Window
     private void OnDragStart(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left || IsClickThroughNow()) return;
+
+        // 拖动滚动条时不移动窗口
+        if (e.OriginalSource is DependencyObject source &&
+            FindAncestor<ScrollBar>(source) is not null)
+        {
+            return;
+        }
+
+        // 可在动量飞行中重新抓住卡片：停掉位置弹簧，从当前屏幕位置继续
+        Motion.Stop(this, Window.LeftProperty);
+        Motion.Stop(this, Window.TopProperty);
+
         _dragging = true;
         _dragMoved = false;
-        _dragOrigin = e.GetPosition(this);
+        _dragEnabled = _cfg.Draggable;
+        _dragStartScreen = PointToScreen(e.GetPosition(this));
+        _lastScreen = _dragStartScreen;
+        _dragHistory.Clear();
+        _dragClock.Restart();
+        _dragHistory.Add((_dragStartScreen.X, _dragStartScreen.Y, 0));
         CaptureMouse();
+        SpringCardScale(1.008, 0.2);
         e.Handled = false;
     }
 
     private void OnDragMove(object sender, MouseEventArgs e)
     {
         if (!_dragging || e.LeftButton != MouseButtonState.Pressed || IsClickThroughNow()) return;
-        Point p = e.GetPosition(this);
-        double dx = p.X - _dragOrigin.X;
-        double dy = p.Y - _dragOrigin.Y;
-        if (Math.Abs(dx) < 2 && Math.Abs(dy) < 2) return;
-        _dragMoved = true;      // 位移超阈值 → 判定为拖动而非单击
-        Left = Math.Round(Left + dx);
-        Top = Math.Round(Top + dy);
+
+        Point screen = PointToScreen(e.GetPosition(this));
+        double totalX = screen.X - _dragStartScreen.X;
+        double totalY = screen.Y - _dragStartScreen.Y;
+
+        // 10px 级迟滞：先判定点击还是拖动，避免手抖吞掉单击
+        if (!_dragMoved && Math.Abs(totalX) < DragThreshold && Math.Abs(totalY) < DragThreshold)
+        {
+            _lastScreen = screen;
+            return;
+        }
+        _dragMoved = true;
+        e.Handled = true;
+
+        if (!_dragEnabled)
+        {
+            _lastScreen = screen;
+            return;
+        }
+
+        // 1:1 跟手（屏幕坐标增量），窗口靠近屏幕边缘时渐进阻尼
+        double dx = screen.X - _lastScreen.X;
+        double dy = screen.Y - _lastScreen.Y;
+        _lastScreen = screen;
+
+        Rect work = SystemParameters.WorkArea;
+        Left = RubberBand(Left + dx, work.Left, work.Right - Width, Width);
+        Top = RubberBand(Top + dy, work.Top, work.Bottom - Height, Height);
+
+        RecordDrag(screen);
     }
 
     private void OnDragEnd(object sender, MouseButtonEventArgs e)
@@ -548,18 +615,109 @@ public partial class WidgetWindow : Window
         if (!_dragging) return;
         _dragging = false;
         ReleaseMouseCapture();
-        if (_dragMoved)
+        SpringCardScale(1.0, 0.22);
+
+        if (!_dragMoved)
         {
-            _dragMoved = false;
-            SavePosition();
+            // 单击（按下-原地抬起，未拖动）→ 打开管理窗口。
+            // 双击的第二击会再次触发本分支，但 EnsureManager 幂等（已开则激活），不会重复开窗。
+            if (e.ChangedButton == MouseButton.Left && !IsClickThroughNow())
+            {
+                ManageRequested?.Invoke();
+            }
             return;
         }
-        // 单击（按下-原地抬起，未拖动）→ 打开管理窗口。
-        // 双击的第二击会再次触发本分支，但 EnsureManager 幂等（已开则激活），不会重复开窗。
-        if (e.ChangedButton == MouseButton.Left && !IsClickThroughNow())
+
+        _dragMoved = false;
+        e.Handled = true;
+
+        if (!_dragEnabled) return;
+
+        (double vx, double vy) = ReleaseVelocity();
+        Rect work = SystemParameters.WorkArea;
+        double targetLeft = Math.Clamp(Project(Left, vx), work.Left, work.Right - Width);
+        double targetTop = Math.Clamp(Project(Top, vy), work.Top, work.Bottom - Height);
+
+        // 释放速度交接给弹簧：掠过一小段后落位，带一点动量回弹
+        Motion.SpringTo(this, Window.LeftProperty, targetLeft,
+            damping: 0.9, response: 0.42, velocity: vx, tolerance: 0.5, completed: SavePosition);
+        Motion.SpringTo(this, Window.TopProperty, targetTop,
+            damping: 0.9, response: 0.42, velocity: vy, tolerance: 0.5, completed: SavePosition);
+    }
+
+    /// <summary>允许/禁止左键拖动（关闭后仍可单击打开课程中心）。</summary>
+    public void SetDraggable(bool value)
+    {
+        _cfg.Draggable = value;
+        _cfg.Save(_store.Dir);
+        UpdateCursor();
+    }
+
+    private void UpdateCursor()
+    {
+        Cursor = IsClickThroughNow() ? Cursors.Arrow
+            : _cfg.Draggable ? Cursors.SizeAll
+            : Cursors.Hand;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node is not null && node is not T)
         {
-            ManageRequested?.Invoke();
+            if (node is not Visual) return null;
+            node = VisualTreeHelper.GetParent(node);
         }
+        return node as T;
+    }
+
+    private void RecordDrag(Point screen)
+    {
+        double now = _dragClock.Elapsed.TotalMilliseconds;
+        _dragHistory.Add((screen.X, screen.Y, now));
+        while (_dragHistory.Count > 2 && now - _dragHistory[0].Ms > 120)
+        {
+            _dragHistory.RemoveAt(0);
+        }
+    }
+
+    private (double Vx, double Vy) ReleaseVelocity()
+    {
+        if (_dragHistory.Count < 2) return (0, 0);
+        (double x0, double y0, double t0) = _dragHistory[0];
+        (double x1, double y1, double t1) = _dragHistory[^1];
+        double dt = (t1 - t0) / 1000.0;
+        if (dt <= 0.008) return (0, 0);
+        return (Math.Clamp((x1 - x0) / dt, -4000, 4000),
+                Math.Clamp((y1 - y0) / dt, -4000, 4000));
+    }
+
+    /// <summary>Apple 的动量投影：指数减速下还会滑行的距离（d≈0.99 更利落）。</summary>
+    private static double Project(double current, double velocity, double decelerationRate = 0.99)
+        => current + velocity / 1000.0 * decelerationRate / (1 - decelerationRate);
+
+    /// <summary>边缘渐进阻尼：越过边界后跟手距离越来越短，而不是硬停。</summary>
+    private static double RubberBand(double value, double min, double max, double dimension)
+    {
+        const double constant = 0.55;
+        if (value < min)
+        {
+            double over = min - value;
+            return min - over * dimension * constant / (dimension + constant * Math.Abs(over));
+        }
+        if (value > max)
+        {
+            double over = value - max;
+            return max + over * dimension * constant / (dimension + constant * Math.Abs(over));
+        }
+        return value;
+    }
+
+    private void SpringCardScale(double to, double response)
+    {
+        Motion.SpringTo(_cardScale, ScaleTransform.ScaleXProperty, to,
+            damping: 1.0, response: response, tolerance: 0.0008);
+        Motion.SpringTo(_cardScale, ScaleTransform.ScaleYProperty, to,
+            damping: 1.0, response: response, tolerance: 0.0008);
     }
 
     private void SavePosition()

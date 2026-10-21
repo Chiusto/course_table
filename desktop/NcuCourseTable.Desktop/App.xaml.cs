@@ -132,13 +132,27 @@ public partial class App : Application
     {
         if (_settings is { IsLoaded: true })
         {
-            _settings.Activate();
+            BringToFront(_settings);
             _settings.RefreshState();
             return;
         }
         _settings = new SettingsWindow();
         _settings.Closed += (_, _) => _settings = null;
         _settings.Show();
+        BringToFront(_settings);
+    }
+
+    /// <summary>把已有窗口切到前台（Windows 前台锁会让单纯 Activate 偶尔失效）。</summary>
+    private static void BringToFront(Window w)
+    {
+        if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+        w.Show();
+        w.Activate();
+        bool top = w.Topmost;
+        w.Topmost = true;
+        w.Topmost = false;
+        w.Topmost = top;
+        w.Focus();
     }
 
     // ---------------- 设置面板读取的状态快照 ----------------
@@ -148,6 +162,7 @@ public partial class App : Application
     internal double WidgetOpacity => _cfg?.Opacity ?? 1.0;
     internal bool IsWidgetShown => _widget is { IsLoaded: true } w && w.IsVisible;
     internal bool IsWidgetLocked => _widget is { } w && w.IsClickThroughNow();
+    internal bool IsWidgetDraggable => _cfg?.Draggable ?? true;
 
     // ---------------- 设置面板触发的动作（与托盘语义一致） ----------------
     internal void SetWidgetVisible(bool visible)
@@ -167,6 +182,18 @@ public partial class App : Application
     {
         if (_widget is null || _host == DesktopHostKind.WallpaperWorkerW) return;
         _widget.SetLocked(locked);
+    }
+
+    internal void SetWidgetDraggable(bool draggable)
+    {
+        if (_cfg is null) return;
+        if (_widget is not null)
+        {
+            _widget.SetDraggable(draggable);
+            return;
+        }
+        _cfg.Draggable = draggable;
+        _cfg.Save(_store!.Dir);
     }
 
     internal void SetWidgetOpacity(double v)
@@ -189,11 +216,7 @@ public partial class App : Application
     {
         if (_manager is { IsLoaded: true })
         {
-            if (_manager.WindowState == WindowState.Minimized)
-            {
-                _manager.WindowState = WindowState.Normal;
-            }
-            _manager.Activate();
+            BringToFront(_manager);
             return;
         }
         _manager = new MainWindow(new MainViewModel(_store!));
@@ -218,6 +241,7 @@ public partial class App : Application
             _manager.Show();
             MainWindow = _manager;
         }
+        BringToFront(_manager);
     }
 
     private void EnsureManager() => ShowManager();

@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
+using NcuCourseTable.Desktop.Interop;
 using NcuCourseTable.Desktop.Services;
 
 namespace NcuCourseTable.Desktop.Views;
@@ -39,6 +41,7 @@ public partial class CredentialDialog : Window
         PassBox.PasswordChanged += (_, _) => { UpdatePlaceholders(); UpdateValidation(); };
         Loaded += (_, _) =>
         {
+            Motion.ScaleFadeIn(Root, 0.96, 0.34);
             UpdateValidation();
             if (UserBox.Text.Length == 0) UserBox.Focus(); else PassBox.Focus();
         };
@@ -46,6 +49,13 @@ public partial class CredentialDialog : Window
         _initialized = true;   // 此后所有事件处理器可安全访问控件与 _vault
         UpdateValidation();     // 用真实状态刷新一次（按钮文案 / 提示文本）
     }
+
+    private void OnTitleBarMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+    }
+
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
 
     private void UpdatePlaceholders()
     {
@@ -67,24 +77,24 @@ public partial class CredentialDialog : Window
             HintText.Text = saved.Length > 0
                 ? $"已保存账号 {saved}，可修改后重新保存。账号、密码均为必填项。"
                 : "账号、密码均为必填项。密码只在本机加密保存，用于登录并同步课表。";
-            HintText.Foreground = BrushOf("#6B707A");
+            HintText.Foreground = BrushOf("#6E6E73");
         }
         else if (!hasUser)
         {
             HintText.Text = "请填写账号（学号 / 工号）";
-            HintText.Foreground = BrushOf("#E5484D");
+            HintText.Foreground = BrushOf("#FF3B30");
         }
         else if (!hasPass)
         {
             HintText.Text = "请填写密码（统一身份认证密码）";
-            HintText.Foreground = BrushOf("#E5484D");
+            HintText.Foreground = BrushOf("#FF3B30");
         }
         else
         {
             HintText.Text = AutoLoginBox.IsChecked == true
                 ? "校验通过：保存后将立即登录并同步课表。"
                 : "校验通过：凭据将加密保存，稍后可经托盘“登录并刷新课表”执行登录。";
-            HintText.Foreground = BrushOf("#6B707A");
+            HintText.Foreground = BrushOf("#6E6E73");
         }
     }
 
@@ -146,14 +156,14 @@ public partial class CredentialDialog : Window
             }
 
             HintText.Text = $"{outcome.Message}\n{outcome.Detail}";
-            HintText.Foreground = BrushOf("#E5484D");
+            HintText.Foreground = BrushOf("#FF3B30");
             MessageBox.Show(this, $"{outcome.Message}\n\n{outcome.Detail}", "登录失败",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
         catch (Exception ex)
         {
             HintText.Text = "登录过程发生异常：" + ex.Message;
-            HintText.Foreground = BrushOf("#E5484D");
+            HintText.Foreground = BrushOf("#FF3B30");
             MessageBox.Show(this, "登录过程发生异常：" + ex.Message, "登录失败",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -175,7 +185,7 @@ public partial class CredentialDialog : Window
         if (busy)
         {
             HintText.Text = "正在验证账号并同步课表，首次登录可能需要十几秒，请稍候…";
-            HintText.Foreground = BrushOf("#2F6FED");
+            HintText.Foreground = BrushOf("#007AFF");
         }
     }
 

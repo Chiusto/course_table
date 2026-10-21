@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using NcuCourseTable.Desktop.Interop;
 using NcuCourseTable.Desktop.Models;
 
 namespace NcuCourseTable.Desktop.Views;
@@ -34,9 +36,12 @@ public partial class CourseDialog : Window
         DayBox.ItemsSource = DayNames;
         DayBox.SelectedIndex = Math.Clamp(draft.Weekday - 1, 0, 6);
 
-        var startItems = _sections.Select(s => s.Display).ToList();
+        var startItems = _sections
+            .Select(s => s.Start.Length > 0 ? $"第{s.Label}节 {s.Start}" : s.Display).ToList();
+        var endItems = _sections
+            .Select(s => s.End.Length > 0 ? $"第{s.Label}节 {s.End}" : s.Display).ToList();
         StartBox.ItemsSource = startItems;
-        EndBox.ItemsSource = startItems;
+        EndBox.ItemsSource = endItems;
         SelectSection(StartBox, draft.StartSection);
         SelectSection(EndBox, draft.EndSection);
 
@@ -49,8 +54,20 @@ public partial class CourseDialog : Window
         WeeksBox.TextChanged += (_, _) => UpdateHint();
         StartBox.SelectionChanged += (_, _) => UpdateHint();
         EndBox.SelectionChanged += (_, _) => UpdateHint();
-        Loaded += (_, _) => UpdateHint();
+        Loaded += (_, _) =>
+        {
+            UpdateHint();
+            Motion.ScaleFadeIn(Root, 0.96, 0.34);
+            NameBox.Focus();
+        };
     }
+
+    private void OnTitleBarMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+    }
+
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
 
     private void SelectSection(ComboBox box, int sectionIndex)
     {
@@ -92,8 +109,7 @@ public partial class CourseDialog : Window
         {
             int count = rule.EndWeek - rule.StartWeek + 1;
             sb.Append("上课周：第").Append(rule.StartWeek).Append('-').Append(rule.EndWeek).Append("周")
-              .Append(rule.OddOnly ? "（仅单周）" : rule.EvenOnly ? "（仅双周）" : "（每周）")
-              .Append(" · ").Append(rule.Display);
+              .Append(rule.OddOnly ? "（仅单周）" : rule.EvenOnly ? "（仅双周）" : "（每周）");
 
             // 冲突提示（软性）：同一上课日、节次区间相交且周次有交集
             var clash = _others.FirstOrDefault(o =>
@@ -111,8 +127,8 @@ public partial class CourseDialog : Window
 
         HintText.Text = sb.ToString();
         HintText.Foreground = ok
-            ? System.Windows.Media.Brushes.DarkSlateGray
-            : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE5, 0x48, 0x4D));
+            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x6E, 0x6E, 0x73))
+            : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x3B, 0x30));
         OkBtn.IsEnabled = ok;
     }
 

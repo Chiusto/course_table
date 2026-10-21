@@ -20,7 +20,12 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         _app = (App)Application.Current;
-        Loaded += (_, _) => RefreshState();
+        MaxHeight = Math.Max(420, SystemParameters.WorkArea.Height - 24);
+        Loaded += (_, _) =>
+        {
+            RefreshState();
+            Motion.ScaleFadeIn(Root, 0.975, 0.34);
+        };
     }
 
     /// <summary>按 App 当前状态回刷全部控件（幂等，可反复调用）。</summary>
@@ -35,21 +40,30 @@ public partial class SettingsWindow : Window
             AccountHint.Text = hasAccount
                 ? "凭据已 DPAPI 加密保存，可一键登录并同步课表"
                 : "配置统一身份认证账号后即可一键同步真课表";
+            HeaderStatus.Text = $"{_app.TermStatusText}  ·  "
+                + (hasAccount ? $"账号 {_app.MaskedAccount}" : "未配置账号");
             LoginBtn.IsEnabled = hasAccount;
 
             // ---- 小组件 ----
             WidgetVisibleBox.IsChecked = _app.IsWidgetShown;
             bool wallpaper = _app.CurrentHost == DesktopHostKind.WallpaperWorkerW;
-            LockBox.IsChecked = !wallpaper && _app.IsWidgetLocked;
+            bool locked = !wallpaper && _app.IsWidgetLocked;
+            LockBox.IsChecked = locked;
             LockBox.IsEnabled = !wallpaper;
+
+            // “允许拖动”反映当前是否真的可拖：锁定穿透时显示为关闭；
+            // 用户打开它时会自动取消锁定穿透。
+            DraggableBox.IsChecked = !wallpaper && !locked && _app.IsWidgetDraggable;
+            DraggableBox.IsEnabled = !wallpaper;
 
             HostBottomRadio.IsChecked = !wallpaper;
             HostWallpaperRadio.IsChecked = wallpaper;
 
             double opacity = _app.WidgetOpacity;
-            Opacity60.IsChecked = Math.Abs(opacity - 0.6) < 0.001;
-            Opacity80.IsChecked = Math.Abs(opacity - 0.8) < 0.001;
-            Opacity100.IsChecked = Math.Abs(opacity - 1.0) < 0.001;
+            Opacity60.IsChecked = !wallpaper && Math.Abs(opacity - 0.6) < 0.001;
+            Opacity80.IsChecked = !wallpaper && Math.Abs(opacity - 0.8) < 0.001;
+            // 壁纸层强制不透明：即使配置里仍是 0.8，也要显示 100% 为选中态
+            Opacity100.IsChecked = wallpaper || Math.Abs(opacity - 1.0) < 0.001;
             // 壁纸层不合成透明（Opacity<1 会让 WPF 补 WS_EX_LAYERED 导致卡片不可见）
             Opacity60.IsEnabled = !wallpaper;
             Opacity80.IsEnabled = !wallpaper;
@@ -83,6 +97,19 @@ public partial class SettingsWindow : Window
     {
         if (_updating) return;
         _app.SetWidgetLocked(LockBox.IsChecked == true);
+        RefreshState();
+    }
+
+    private void OnDraggableChanged(object sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        bool on = DraggableBox.IsChecked == true;
+        if (on && _app.IsWidgetLocked)
+        {
+            _app.SetWidgetLocked(false);
+        }
+        _app.SetWidgetDraggable(on);
+        RefreshState();
     }
 
     private void OnHostChanged(object sender, RoutedEventArgs e)

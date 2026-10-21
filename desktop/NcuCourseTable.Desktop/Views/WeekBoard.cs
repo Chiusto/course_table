@@ -5,9 +5,12 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Threading;
+using NcuCourseTable.Desktop.Interop;
 using NcuCourseTable.Desktop.Models;
 using NcuCourseTable.Desktop.Services;
 
@@ -16,33 +19,39 @@ namespace NcuCourseTable.Desktop.Views;
 /// <summary>
 /// 周视图画布（原生 WPF，自绘网格与课程块）。
 ///
+/// Apple 风格视觉：系统字体、发丝级分隔线、柔和色块、胶囊今日标记与红色现在线。
 /// 布局：
-///   左上角为节次时间轴（第 N 节 + 起止时间），右侧 7 列为周一~周日；
+///   左上角为节次时间轴，右侧 7 列为周一~周日；
 ///   课程块按 (start_section-1)*RowHeight 纵向定位、跨 end-start+1 行。
 /// 难点处理：
 ///   1) 同日重叠课程 -> 贪心分栏（lane），每门课占 1/N 列宽并排显示；
 ///   2) 节次纵向合并 -> 与 ncu_sdk parser 相同语义，一条记录一个块；
-///   3) 点击/双击 -> 选中详情、双击编辑、空白双击按落点新建课程。
-///
-/// 参考 TrafficMonitor 的“点窗内任意处拖窗”思路：本组件头部留白区域可拖动窗口，
-/// 拖拽逻辑在 MainWindow 中通过 WM/控件的 MouseLeftButtonDown 实现。
+///   3) 点击/双击 -> 选中详情、双击编辑、空白双击按落点新建课程；
+///   4) 今日列绘制实时时间线，30 秒刷新一次。
 /// </summary>
 public sealed class WeekBoard : Canvas
 {
-    public const double HeaderHeight = 48;
-    public const double TimeAxisWidth = 62;
-    public const double RowHeight = 54;
-    public const double BlockGap = 3;
+    public const double HeaderHeight = 54;
+    public const double TimeAxisWidth = 64;
+    public const double RowHeight = 50;
+    public const double BlockGap = 3.0;
 
-    // 配色（浅色主题）
-    private static readonly Brush LineBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE8, 0xEA, 0xEE)));
-    private static readonly Brush HeaderLineBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xD3, 0xD7, 0xDE)));
-    private static readonly Brush AxisBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xF6, 0xF7, 0xF9)));
-    private static readonly Brush TodayColumnBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0xF6, 0xE5)));
-    private static readonly Brush SelectedColumnBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xFF)));
-    private static readonly Brush TextBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x2B, 0x2F, 0x38)));
-    private static readonly Brush SubTextBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x6B, 0x70, 0x7A)));
-    private static readonly Brush TodayBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D)));
+    // Apple 风格配色（与 Theme.xaml 保持一致）
+    private static readonly Brush GutterBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFC)));
+    private static readonly Brush WeekendBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFB, 0xFB, 0xFD)));
+    private static readonly Brush RuleFaintBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xF1, 0xF1, 0xF5)));
+    private static readonly Brush RuleBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xEE)));
+    private static readonly Brush RuleStrongBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xE0)));
+    private static readonly Brush InkBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x1D, 0x1D, 0x1F)));
+    private static readonly Brush InkSoftBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x73)));
+    private static readonly Brush InkFaintBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9F)));
+    private static readonly Brush AccentBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xFF)));
+    private static readonly Brush AccentSoftBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE8, 0xF3, 0xFF)));
+    private static readonly Brush DangerBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x30)));
+    private static readonly Brush TodayTintBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x0E, 0x00, 0x7A, 0xFF)));
+    private static readonly Brush SelectedTintBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x06, 0x00, 0x00, 0x00)));
+
+    private static readonly FontFamily AppFont = new("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
 
     // ------------------------------------------------------------------ 依赖属性
     public static readonly DependencyProperty CoursesProperty = DependencyProperty.Register(
@@ -124,13 +133,16 @@ public sealed class WeekBoard : Canvas
 
     // ------------------------------------------------------------------
     private readonly List<SectionTime> _sectionList = new();
+    private readonly DispatcherTimer _ticker = new() { Interval = TimeSpan.FromSeconds(30) };
 
     public WeekBoard()
     {
-        Background = Brushes.White;
+        Background = Brushes.Transparent;
         MouseLeftButtonDown += OnBoardMouseDown;
         SizeChanged += (_, _) => Rebuild();
-        Loaded += (_, _) => Rebuild();
+        Loaded += (_, _) => { _ticker.Start(); Rebuild(); };
+        Unloaded += (_, _) => _ticker.Stop();
+        _ticker.Tick += (_, _) => { if (IsLoaded) Rebuild(); };
     }
 
     private static void VisualAffect(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -172,10 +184,11 @@ public sealed class WeekBoard : Canvas
         double colW = gridW / 7;
 
         DrawBackground(gridW, colW);
+        DrawGridLines(gridW, colW);
         DrawHeader(gridW, colW);
         DrawAxis();
-        DrawGridLines(gridW, colW);
         DrawCourseBlocks(gridW, colW);
+        DrawNowLine(colW);
     }
 
     private void RefreshSections()
@@ -203,32 +216,53 @@ public sealed class WeekBoard : Canvas
     // ------------------------------------------------------------- 静态绘制
     private void DrawBackground(double gridW, double colW)
     {
-        // 整体白底 + 时间轴底色
-        AddRect(0, 0, TimeAxisWidth, Height, AxisBrush);
-        // 选中日 / 今日列着色
+        AddRect(0, 0, TimeAxisWidth, Height, GutterBrush);
+        for (int day = 6; day <= 7; day++)
+        {
+            AddRect(TimeAxisWidth + (day - 1) * colW, 0, colW, Height, WeekendBrush);
+        }
         if (HighlightToday && TodayDay is >= 1 and <= 7)
         {
-            AddRect(TimeAxisWidth + (TodayDay - 1) * colW, 0, colW, Height, TodayColumnBrush);
+            AddRect(TimeAxisWidth + (TodayDay - 1) * colW, 0, colW, Height, TodayTintBrush);
         }
         if (SelectedDay is >= 1 and <= 7 && !(HighlightToday && SelectedDay == TodayDay))
         {
-            AddRect(TimeAxisWidth + (SelectedDay - 1) * colW, 0, colW, Height, SelectedColumnBrush);
+            AddRect(TimeAxisWidth + (SelectedDay - 1) * colW, 0, colW, Height, SelectedTintBrush);
         }
         _ = gridW;
     }
 
     private void DrawHeader(double gridW, double colW)
     {
-        // 顶部表头：周X + 日期（日期随所选周滑动）
         for (int day = 1; day <= 7; day++)
         {
             double x = TimeAxisWidth + (day - 1) * colW;
+            bool isToday = HighlightToday && day == TodayDay;
+
+            if (isToday)
+            {
+                double pillW = Math.Max(46, colW - 18);
+                var pill = new Border
+                {
+                    Width = pillW,
+                    Height = 42,
+                    CornerRadius = new CornerRadius(10),
+                    Background = AccentSoftBrush,
+                    IsHitTestVisible = false,
+                };
+                Children.Add(pill);
+                SetLeft(pill, x + (colW - pillW) / 2);
+                SetTop(pill, 6);
+                SetZIndex(pill, 4);
+            }
+
             var panel = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Width = colW - 8,
+                VerticalAlignment = VerticalAlignment.Top,
+                Width = Math.Max(40, colW - 12),
+                Margin = new Thickness(0, 9, 0, 0),
             };
 
             string date = "";
@@ -236,42 +270,43 @@ public sealed class WeekBoard : Canvas
             {
                 date = ts.AddDays((SelectedWeek - 1) * 7 + day - 1).ToString("MM-dd");
             }
-            bool isToday = HighlightToday && day == TodayDay;
-            bool isSelected = day == SelectedDay;
 
-            var title = new TextBlock
+            var dayText = new TextBlock
             {
-                Text = $"{WeekdayName(day)}{(isToday ? " · 今天" : "")}",
+                Text = WeekdayName(day),
+                FontFamily = AppFont,
                 FontSize = 12.5,
-                FontWeight = FontWeights.DemiBold,
-                Foreground = isToday ? TodayBrush : (isSelected ? BrushFrom(0x2F, 0x6F, 0xED) : TextBrush),
+                FontWeight = isToday ? FontWeights.SemiBold : FontWeights.Medium,
+                Foreground = isToday ? AccentBrush : InkBrush,
                 TextAlignment = TextAlignment.Center,
             };
-            panel.Children.Add(title);
+            Typography.SetNumeralAlignment(dayText, FontNumeralAlignment.Tabular);
+            panel.Children.Add(dayText);
+
             if (date.Length > 0)
             {
-                panel.Children.Add(new TextBlock
+                var dateText = new TextBlock
                 {
                     Text = date,
-                    FontSize = 10.5,
-                    Foreground = SubTextBrush,
+                    FontFamily = AppFont,
+                    FontSize = 10,
+                    Foreground = isToday ? AccentBrush : InkFaintBrush,
                     TextAlignment = TextAlignment.Center,
-                });
+                    Margin = new Thickness(0, 2, 0, 0),
+                };
+                Typography.SetNumeralAlignment(dateText, FontNumeralAlignment.Tabular);
+                panel.Children.Add(dateText);
             }
-            Children.Add(panel);
-            SetLeft(panel, x + 4);
-            SetTop(panel, 4);
-            SetZIndex(panel, 6);
 
-            // 选中日顶条
-            if (isSelected)
-            {
-                AddRect(x + 6, 2, colW - 12, 3, BrushFrom(0x2F, 0x6F, 0xED));
-            }
+            Children.Add(panel);
+            SetLeft(panel, x + 6);
+            SetTop(panel, 8);
+            SetZIndex(panel, 6);
         }
 
-        // 表头底线
-        AddRect(0, HeaderHeight - 1, TimeAxisWidth + gridW, 1.2, HeaderLineBrush);
+        AddText("时间", 9.5, FontWeights.Medium, InkFaintBrush,
+            TimeAxisWidth - 10, 11, rightAligned: true, family: AppFont);
+        AddRect(0, HeaderHeight - 1, TimeAxisWidth + gridW, 1, RuleBrush);
     }
 
     private void DrawAxis()
@@ -282,38 +317,34 @@ public sealed class WeekBoard : Canvas
             if (sec is null) continue;
             double y = HeaderHeight + i * RowHeight;
 
-            // 节次名 + 开始时间在行带内垂直居中：课程块占满行带（上下留 BlockGap），
-            // 居中后“第N节”与块内课程名一行、“开始时间”与块内时间一行上下对齐，
-            // 消除原先时间贴行顶、与课程块错位约 15px 的观感。
             bool hasTime = !string.IsNullOrEmpty(sec.Start);
-            double labelLine = 16.2, timeLine = 14, gap = 1.5; // YaHei UI 行高 ≈ 1.47×字号
-            double pairH = labelLine + (hasTime ? gap + timeLine : 0);
-            double top = y + (RowHeight - pairH) / 2.0;
+            AddText(hasTime ? sec.Start : SecText(sec.Label), hasTime ? 11.5 : 10,
+                hasTime ? FontWeights.Medium : FontWeights.Normal,
+                hasTime ? InkSoftBrush : InkFaintBrush,
+                TimeAxisWidth - 10, y + 8, rightAligned: true, family: AppFont);
 
-            AddText(SecText(sec.Label), 11, FontWeights.Medium, TextBrush,
-                TimeAxisWidth - 8, top, rightAligned: true);
             if (hasTime)
             {
-                AddText(sec.Start, 9.5, FontWeights.Normal, SubTextBrush,
-                    TimeAxisWidth - 8, top + labelLine + gap, rightAligned: true);
+                AddText(sec.Label, 9, FontWeights.Normal, InkFaintBrush,
+                    TimeAxisWidth - 10, y + 26, rightAligned: true, family: AppFont);
             }
         }
     }
 
     private void DrawGridLines(double gridW, double colW)
     {
-        // 竖线
         for (int day = 0; day <= 7; day++)
         {
             double x = TimeAxisWidth + day * colW;
-            AddRect(x, HeaderHeight, 1, RowCount * RowHeight, LineBrush);
+            AddRect(x, HeaderHeight, 1, RowCount * RowHeight, RuleFaintBrush);
         }
-        // 横线
         for (int i = 0; i <= RowCount; i++)
         {
             double y = HeaderHeight + i * RowHeight;
-            AddRect(TimeAxisWidth, y, gridW, 1, LineBrush);
+            AddRect(TimeAxisWidth, y, gridW, 1, RuleBrush);
         }
+        // 午间分隔：第 5 节之后一条稍重的发丝线
+        AddRect(TimeAxisWidth, HeaderHeight + 5 * RowHeight, gridW, 1, RuleStrongBrush);
     }
 
     // ------------------------------------------------------------- 课程块
@@ -362,12 +393,12 @@ public sealed class WeekBoard : Canvas
             for (int k = 0; k < dayCourses.Count; k++)
             {
                 Course c = dayCourses[k];
-                double span = Math.Max(1, (c.EndSection - c.StartSection + 1) * RowHeight - 2 * BlockGap);
+                double height = Math.Max(1, (c.EndSection - c.StartSection + 1) * RowHeight - 2 * BlockGap);
                 double wBlock = (colW - 2 * BlockGap - (laneCount - 1) * 2) / laneCount;
                 double x = colX + BlockGap + lanes[k] * (wBlock + 2);
                 double y = HeaderHeight + (c.StartSection - 1) * RowHeight + BlockGap;
 
-                var block = CreateBlock(c, span, wBlock);
+                var block = CreateBlock(c, height, wBlock);
                 Children.Add(block);
                 SetLeft(block, x);
                 SetTop(block, y);
@@ -377,64 +408,118 @@ public sealed class WeekBoard : Canvas
         _ = gridW;
     }
 
-    private Border CreateBlock(Course c, double height, double width)
+    private FrameworkElement CreateBlock(Course c, double height, double width)
     {
-        var solid = CoursePalette.SolidBrush(c.Name, c.Teacher);
-        var soft = CoursePalette.SoftBrush(c.Name, c.Teacher);
+        Brush solid = CoursePalette.SolidBrush(c.Name, c.Teacher);
+        Brush soft = CoursePalette.SoftBrush(c.Name, c.Teacher);
+        Brush edge = CoursePalette.EdgeBrush(c.Name, c.Teacher);
         bool selected = SelectedCourse?.Id == c.Id;
+        bool compact = height < RowHeight * 1.55;
+        bool roomLine = height >= RowHeight * 1.85;
 
-        var border = new Border
+        var scale = new ScaleTransform(1, 1);
+        var root = new Grid
         {
-            Width = Math.Max(46, width - 4),
-            // 必须显式设高：span = (end-start+1)*RowHeight - 2*gap。缺省时 Border 按内容
-            // 自适应成单行高度，6-8 节的课只画 1 行，与左侧时间轴完全对不上。
-            Height = Math.Max(RowHeight - 2 * BlockGap, height),
-            Background = soft,
-            BorderBrush = solid,
-            BorderThickness = new Thickness(selected ? 2.2 : 1.2),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(5, 4, 4, 3),
+            Width = Math.Max(46, width - 2),
+            Height = height,
+            Background = Brushes.Transparent,
             Cursor = Cursors.Hand,
             Tag = c,
             ToolTip = BuildTooltip(c),
+            SnapsToDevicePixels = true,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = scale,
         };
+
+        root.Children.Add(new Border
+        {
+            Background = soft,
+            BorderBrush = edge,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+        });
+
+        root.Children.Add(new Border
+        {
+            Width = 3.5,
+            Background = solid,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(9, 0, 0, 9),
+            Margin = new Thickness(0, 1, 0, 1),
+            IsHitTestVisible = false,
+        });
 
         var panel = new StackPanel();
-        var nameText = new TextBlock
+        panel.Children.Add(new TextBlock
         {
             Text = c.Name,
-            FontSize = 12.5,
-            FontWeight = FontWeights.DemiBold,
-            Foreground = TextBrush,
+            FontFamily = AppFont,
+            FontSize = compact ? 11.8 : 12.3,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = InkBrush,
+            TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        panel.Children.Add(nameText);
+            MaxHeight = compact ? 17 : 35,
+            LineHeight = 16.5,
+        });
 
-        var lines = new List<string> { c.SectionRangeText };
-        if (height >= RowHeight * 1.5)
+        if (!compact)
         {
-            string t = _sectionList.TimeText(c.StartSection, c.EndSection);
-            lines.Add(string.IsNullOrEmpty(t) ? (c.Room.Length > 0 ? c.Room : c.Teacher) : $"{t} · {c.Room}");
-        }
-        if (height >= RowHeight * 2.4)
-        {
-            lines.Add($"{c.Teacher} ｜ {c.Rule.Display}");
-        }
-        foreach (string line in lines.Take(2))
-        {
-            panel.Children.Add(new TextBlock
+            string time = _sectionList.TimeText(c.StartSection, c.EndSection);
+            string meta = time.Length > 0
+                ? $"{c.StartSection}–{c.EndSection} 节 · {time}"
+                : c.SectionRangeText;
+            var metaText = new TextBlock
             {
-                Text = line,
-                FontSize = 10.3,
-                Foreground = SubTextBrush,
+                Text = meta,
+                FontFamily = AppFont,
+                FontSize = 9.8,
+                Foreground = InkSoftBrush,
+                Margin = new Thickness(0, 3, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0, 2, 0, 0),
+            };
+            Typography.SetNumeralAlignment(metaText, FontNumeralAlignment.Tabular);
+            panel.Children.Add(metaText);
+
+            if (roomLine)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = c.DisplayRoom,
+                    FontFamily = AppFont,
+                    FontSize = 9.8,
+                    Foreground = InkFaintBrush,
+                    Margin = new Thickness(0, 1, 0, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+            }
+        }
+
+        var content = new Grid
+        {
+            Margin = new Thickness(11, 7, 8, 6),
+            Children = { panel },
+        };
+        root.Children.Add(content);
+
+        if (selected)
+        {
+            root.Children.Add(new Border
+            {
+                BorderBrush = AccentBrush,
+                BorderThickness = new Thickness(2),
+                CornerRadius = new CornerRadius(9),
+                IsHitTestVisible = false,
             });
         }
 
-        border.Child = panel;
+        // 悬停轻微浮起、按下即时收缩——反馈发生在 pointer-down，不等 click
+        root.MouseEnter += (_, _) => SpringScale(scale, 1.012, 0.18);
+        root.MouseLeave += (_, _) => SpringScale(scale, 1.0, 0.2);
+        root.PreviewMouseLeftButtonDown += (_, _) => SpringScale(scale, 0.982, 0.1);
+        root.PreviewMouseLeftButtonUp += (_, _) => SpringScale(scale, root.IsMouseOver ? 1.012 : 1.0, 0.18);
 
-        border.MouseLeftButtonDown += (_, e) =>
+        root.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true;
             if (e.ClickCount >= 2)
@@ -446,7 +531,13 @@ public sealed class WeekBoard : Canvas
                 CourseClicked?.Invoke(c);
             }
         };
-        return border;
+        return root;
+    }
+
+    private static void SpringScale(ScaleTransform scale, double to, double response)
+    {
+        Motion.SpringTo(scale, ScaleTransform.ScaleXProperty, to, 1.0, response, tolerance: 0.0008);
+        Motion.SpringTo(scale, ScaleTransform.ScaleYProperty, to, 1.0, response, tolerance: 0.0008);
     }
 
     private object BuildTooltip(Course c)
@@ -454,7 +545,80 @@ public sealed class WeekBoard : Canvas
         string t = _sectionList.TimeText(c.StartSection, c.EndSection);
         string when = $"第 {WeekdayName(c.Weekday)} · 第{c.StartSection}-{c.EndSection}节";
         if (t.Length > 0) when += $"  {t}";
-        return $"{c.Name}\n教师：{(c.Teacher.Length > 0 ? c.Teacher : "—")}\n地点：{(c.Room.Length > 0 ? c.Room : "—")}\n时间：{when}\n周次：{c.Rule.Display}";
+        return $"{c.Name}\n教师：{(c.DisplayTeacher.Length > 0 ? c.DisplayTeacher : "—")}\n" +
+               $"地点：{(c.DisplayRoom.Length > 0 ? c.DisplayRoom : "—")}\n时间：{when}\n周次：{c.Rule.Display}";
+    }
+
+    // ------------------------------------------------------------- 今日时间线
+    private void DrawNowLine(double colW)
+    {
+        if (!HighlightToday || TodayDay is < 1 or > 7) return;
+
+        DateTime now = DateTime.Now;
+        int mins = now.Hour * 60 + now.Minute;
+        SectionTime? sec = _sectionList.FirstOrDefault(s =>
+        {
+            int a = MinutesOf(s.Start);
+            int b = MinutesOf(s.End);
+            return a >= 0 && b > a && mins >= a && mins < b;
+        });
+        if (sec is null) return;
+
+        int start = MinutesOf(sec.Start);
+        int end = MinutesOf(sec.End);
+        double frac = Math.Clamp((mins - start) / (double)(end - start), 0, 1);
+        double y = HeaderHeight + (sec.Index - 1) * RowHeight + frac * RowHeight;
+        double x = TimeAxisWidth + (TodayDay - 1) * colW;
+
+        var line = new Rectangle
+        {
+            Width = Math.Max(1, colW - 8),
+            Height = 1.5,
+            Fill = DangerBrush,
+            RadiusX = 0.75,
+            RadiusY = 0.75,
+            IsHitTestVisible = false,
+        };
+        Children.Add(line);
+        SetLeft(line, x + 4);
+        SetTop(line, y - 0.75);
+        SetZIndex(line, 30);
+
+        var dot = new Ellipse { Width = 6, Height = 6, Fill = DangerBrush, IsHitTestVisible = false };
+        Children.Add(dot);
+        SetLeft(dot, x + 1);
+        SetTop(dot, y - 3);
+        SetZIndex(dot, 31);
+
+        var tag = new Border
+        {
+            Background = DangerBrush,
+            CornerRadius = new CornerRadius(7),
+            Padding = new Thickness(6, 1.5, 6, 1.5),
+            Child = new TextBlock
+            {
+                Text = $"现在 {now:HH:mm}",
+                FontFamily = AppFont,
+                FontSize = 9,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White,
+            },
+            IsHitTestVisible = false,
+        };
+        Children.Add(tag);
+        SetLeft(tag, x + 10);
+        SetTop(tag, y - 10);
+        SetZIndex(tag, 32);
+    }
+
+    private static int MinutesOf(string hhmm)
+    {
+        string[] parts = (hhmm ?? "").Split(':');
+        if (parts.Length == 2 && int.TryParse(parts[0], out int h) && int.TryParse(parts[1], out int m))
+        {
+            return h * 60 + m;
+        }
+        return -1;
     }
 
     // ------------------------------------------------------------- 事件：空白双击新建
@@ -483,8 +647,6 @@ public sealed class WeekBoard : Canvas
 
     private static string SecText(string label) => label.Length > 0 ? $"第{label}节" : "";
 
-    private static SolidColorBrush BrushFrom(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
-
     private void AddRect(double x, double y, double w, double h, Brush fill)
     {
         var r = new Rectangle { Width = Math.Max(0.5, w), Height = Math.Max(0.5, h), Fill = fill };
@@ -495,17 +657,21 @@ public sealed class WeekBoard : Canvas
     }
 
     private void AddText(string text, double fontSize, FontWeight weight, Brush fg,
-        double rightEdge, double top, bool rightAligned)
+        double rightEdge, double top, bool rightAligned, FontFamily? family = null)
     {
+        var fam = family ?? AppFont;
         var tb = new TextBlock
         {
             Text = text,
+            FontFamily = fam,
             FontSize = fontSize,
             FontWeight = weight,
             Foreground = fg,
             HorizontalAlignment = HorizontalAlignment.Right,
         };
+        Typography.SetNumeralAlignment(tb, FontNumeralAlignment.Tabular);
         Children.Add(tb);
+
         double ppd = 1.0;
         try
         {
@@ -516,16 +682,9 @@ public sealed class WeekBoard : Canvas
             // 未入视觉树时退回 96dpi 假设
         }
         var sz = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            new Typeface(tb.FontFamily, FontStyles.Normal, weight, FontStretches.Normal),
+            new Typeface(fam, FontStyles.Normal, weight, FontStretches.Normal),
             fontSize, fg, ppd);
-        if (rightAligned)
-        {
-            SetLeft(tb, rightEdge - sz.Width);
-        }
-        else
-        {
-            SetLeft(tb, rightEdge);
-        }
+        SetLeft(tb, rightAligned ? rightEdge - sz.Width : rightEdge);
         SetTop(tb, top);
         SetZIndex(tb, 5);
     }

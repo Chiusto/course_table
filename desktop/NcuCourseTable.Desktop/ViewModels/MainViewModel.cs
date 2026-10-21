@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using NcuCourseTable.Desktop.Common;
 using NcuCourseTable.Desktop.Models;
@@ -51,6 +52,18 @@ public sealed class MainViewModel : ObservableObject
         ? _store.Data.TermName
         : (_store.Data.Termcode.Length > 0 ? $"学期 {_store.Data.Termcode}" : "未命名学期");
 
+    /// <summary>排版用学期标题：2026-2027学年第1学期 → 2026—2027 学年 · 第 1 学期。</summary>
+    public string TermTitleDisplay
+    {
+        get
+        {
+            string t = TermTitle.Replace("-", "—");
+            t = t.Replace("学年第", " 学年 · 第 ");
+            t = t.Replace("学期", " 学期");
+            return t.Replace("  ", " ").Trim();
+        }
+    }
+
     public DateTime? TermStart => DateTime.TryParseExact(_store.Data.TermStart, "yyyy-MM-dd",
         CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
 
@@ -87,7 +100,7 @@ public sealed class MainViewModel : ObservableObject
             if (start is null) return "";
             DateTime monday = start.Value.AddDays((_selectedWeek - 1) * 7);
             DateTime sunday = monday.AddDays(6);
-            return $"{monday:MM-dd} ~ {sunday:MM-dd}";
+            return $"{monday:MM.dd} — {sunday:MM.dd}";
         }
     }
 
@@ -118,11 +131,17 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(HasSelection));
                 OnPropertyChanged(nameof(DetailTime));
+                OnPropertyChanged(nameof(SelectedCourseColor));
             }
         }
     }
 
     public bool HasSelection => SelectedCourse is not null;
+
+    /// <summary>详情卡顶部色带；未选中时透明。</summary>
+    public Brush SelectedCourseColor => SelectedCourse is { } c
+        ? CoursePalette.SolidBrush(c.Name, c.Teacher)
+        : Brushes.Transparent;
 
     public string DetailTime
     {
@@ -293,6 +312,7 @@ public sealed class MainViewModel : ObservableObject
         HasCourses = _store.Data.Courses.Count > 0;
         OnPropertyChanged(nameof(Termcode));
         OnPropertyChanged(nameof(TermTitle));
+        OnPropertyChanged(nameof(TermTitleDisplay));
         OnPropertyChanged(nameof(TermStart));
         OnPropertyChanged(nameof(TotalWeeks));
         OnPropertyChanged(nameof(SectionList));

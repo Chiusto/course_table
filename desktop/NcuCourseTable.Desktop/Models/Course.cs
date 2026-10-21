@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace NcuCourseTable.Desktop.Models;
 
@@ -40,9 +42,92 @@ public sealed class Course
     private WeekRule? _rule;
 
     [JsonIgnore]
+    private HashSet<int>? _cancelWeeks;
+
+    [JsonIgnore]
+    private HashSet<int>? _makeupWeeks;
+
+    private static readonly Regex BracketRe = new(@"\[([^\]]+)\]", RegexOptions.Compiled);
+    private static readonly Regex TagRe = new(@"<[^>]*>", RegexOptions.Compiled);
+
+    [JsonIgnore]
     public WeekRule Rule => _rule ??= WeekRule.TryParse(WeeksRaw);
 
-    public bool ContainsWeek(int week) => Rule.Contains(week);
+    /// <summary>本周是否上课：补课优先，其次停课，最后按基础周次规则。</summary>
+    public bool ContainsWeek(int week)
+    {
+        EnsureExceptions();
+        if (_makeupWeeks!.Contains(week)) return true;
+        if (_cancelWeeks!.Contains(week)) return false;
+        return Rule.Contains(week);
+    }
+
+    /// <summary>剔除 gmsstu 单元格里混入的停课/补课标记后，用于展示的教师名。</summary>
+    [JsonIgnore]
+    public string DisplayTeacher
+    {
+        get
+        {
+            string t = TagRe.Replace(Teacher ?? "", " ");
+            int cut = t.IndexOfAny(new[] { '[', '【' });
+            if (cut >= 0) t = t[..cut];
+            return t.Trim();
+        }
+    }
+
+    /// <summary>
+    /// 展示用地点。含停课/补课单元格时，Room 字段可能是“8-8周 (停课)”，
+    /// 此时从 Raw 中取第一个真实地点（不含“周”的方括号片段）。
+    /// </summary>
+    [JsonIgnore]
+    public string DisplayRoom
+    {
+        get
+        {
+            string room = TagRe.Replace(Room ?? "", " ").Trim();
+            if (room.Length > 0 && !room.Contains('周') && !room.Contains("停课") && !room.Contains("补课"))
+            {
+                return room;
+            }
+            if (!string.IsNullOrEmpty(Raw))
+            {
+                foreach (Match m in BracketRe.Matches(Raw))
+                {
+                    string token = TagRe.Replace(m.Groups[1].Value, " ").Trim();
+                    if (token.Length > 0 && !token.Contains('周') && !Regex.IsMatch(token, @"^\d+\s*[-~]\s*\d+$"))
+                    {
+                        return token;
+                    }
+                }
+            }
+            return room.Length > 0 ? room : "—";
+        }
+    }
+
+    private void EnsureExceptions()
+    {
+        if (_cancelWeeks is not null) return;
+        _cancelWeeks = new HashSet<int>();
+        _makeupWeeks = new HashSet<int>();
+        if (string.IsNullOrEmpty(Raw)) return;
+
+        foreach (Match m in BracketRe.Matches(Raw))
+        {
+            string token = m.Groups[1].Value;
+            if (!token.Contains('周')) continue;
+            if (token.Contains("停课")) AddWeeks(_cancelWeeks, token);
+            else if (token.Contains("补课")) AddWeeks(_makeupWeeks, token);
+        }
+    }
+
+    private static void AddWeeks(HashSet<int> set, string token)
+    {
+        WeekRule rule = WeekRule.TryParse(token);
+        foreach ((int start, int end) in rule.Ranges)
+        {
+            for (int w = start; w <= end; w++) set.Add(w);
+        }
+    }
 
     [JsonIgnore]
     public int SectionCount => EndSection - StartSection + 1;

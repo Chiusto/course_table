@@ -37,3 +37,6 @@ data/
 # 敏感凭据与本地库（防止在其它目录被误提交）
 credentials.bin
 *.db
+
+# 发布产物
+dist/

@@ -35,7 +35,9 @@ public sealed class JsonStore
         FilePath = Path.Combine(Dir, FileName);
     }
 
-    /// <summary>数据目录：--data 参数 &gt; NCU_COURSE_DATA 环境变量 &gt; %LocalAppData%\NcuCourseTable。</summary>
+    /// <summary>
+    /// 数据目录：--data 参数 &gt; NCU_COURSE_DATA &gt; exe 同级 data（便携版）&gt; %LocalAppData%\NcuCourseTable。
+    /// </summary>
     public static string ResolveDir(string? dir)
     {
         if (!string.IsNullOrWhiteSpace(dir))
@@ -46,6 +48,12 @@ public sealed class JsonStore
         if (!string.IsNullOrWhiteSpace(env))
         {
             return Path.GetFullPath(env);
+        }
+        // 便携版：发布目录内自带 data/，双击 exe 即可使用随包数据
+        string portable = Path.Combine(AppContext.BaseDirectory, "data");
+        if (Directory.Exists(portable))
+        {
+            return portable;
         }
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

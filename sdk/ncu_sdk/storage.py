@@ -204,7 +204,7 @@ class ScheduleStore:
             return {}
         if max_age_days is not None:
             oldest = min(r["updated_at"] for r in rows)
-            if time.time() - oldest > max_age_days * 86400:
+            if time.time() - oldest >= max_age_days * 86400:
                 return {}
         return {
             r["term_index"]: Section(

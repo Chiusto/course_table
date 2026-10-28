@@ -9,10 +9,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>NcuCourseTable.Desktop</RootNamespace>
     <AssemblyName>NcuCourseTable.Desktop</AssemblyName>
-    <Product>南昌大学课程表组件</Product>
-    <AssemblyTitle>Ncu Course Table Widget</AssemblyTitle>
-    <Version>1.0.0</Version>
+    <Product>时间表</Product>
+    <AssemblyTitle>Timetable</AssemblyTitle>
+    <Version>2.0.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Timetable.Plugins.Abstractions\Timetable.Plugins.Abstractions.csproj" />
+  </ItemGroup>
 
   <!-- 仅托盘使用 WinForms：移除其隐式全局 using，避免 Brush/ComboBox/Application 与 WPF 二义 -->
   <ItemGroup>

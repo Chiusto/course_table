@@ -23,7 +23,7 @@ namespace NcuCourseTable.Desktop.Views;
 /// 桌面小组件 —— 真正“长在桌面上”的那块玻璃卡片。
 ///
 /// 与 MainWindow（应用窗口）的关系：MainWindow 是全功能“管理窗口”（编辑/导入/周视图），
-/// 供需要时打开；WidgetWindow 是常驻桌面层的信息组件，二者共享同一份 courses.json。
+/// 供需要时打开；WidgetWindow 是常驻桌面层的信息组件，二者共享同一份 schedule.json。
 ///
 /// 宿主策略（构造参数 hostKind）：
 ///  - BottomWindow   ：Rainmeter 式置底顶层窗口。无任务栏、无 Alt+Tab、非置顶；
@@ -39,12 +39,18 @@ public partial class WidgetWindow : Window
 
     private static readonly Brush Accent = BrushOf("#0A84FF");
     private static readonly Brush OnGoing = BrushOf("#FF9F0A");
+    private static readonly Brush TodoDue = BrushOf("#8E8E93");
+    private static readonly Brush TodoToday = BrushOf("#FFB340");
+    private static readonly Brush TodoOverdue = BrushOf("#FF8A80");
+    private static readonly Brush TodoPriorityUrgent = BrushOf("#FF453A");
+    private static readonly Brush TodoPriorityImportant = BrushOf("#FF9F0A");
+    private static readonly Brush TodoPriorityNormal = BrushOf("#636366");
     private static readonly Brush RowBarNone = BrushOf("#3A3A3C");
     private static readonly Brush TextMain = BrushOf("#FFFFFF");
     private static readonly Brush TextSub = BrushOf("#B0B0B5");
     private static readonly Brush TextDim = BrushOf("#8E8E93");
 
-    private readonly JsonStore _store;
+    private readonly DataStore _store;
     private readonly WidgetConfig _cfg;
     private readonly DesktopHostKind _hostKind;
     private readonly Dictionary<int, SectionTime> _sectionMap;
@@ -78,6 +84,7 @@ public partial class WidgetWindow : Window
 
     // 计算缓存（每次 Reload 后刷新）
     private bool _inTerm;
+    private bool _hasTermStart;
     private int _currentWeek = 1;
     private int _termDaysOffset;
     private DateTime _termStartDate;
@@ -88,7 +95,7 @@ public partial class WidgetWindow : Window
 
     public bool IsWallpaperMode => _hostKind == DesktopHostKind.WallpaperWorkerW;
 
-    public WidgetWindow(JsonStore store, WidgetConfig cfg, DesktopHostKind hostKind)
+    public WidgetWindow(DataStore store, WidgetConfig cfg, DesktopHostKind hostKind)
     {
         // 必须在 InitializeComponent（窗口句柄创建）之前按宿主决定分层与否：
         // WPF AllowsTransparency=True 即 WS_EX_LAYERED 分层窗口，而分层窗口被
@@ -117,6 +124,8 @@ public partial class WidgetWindow : Window
             ?? store.SectionMap.ToDictionary(kv => kv.Key, kv => kv.Value);
 
         Title = WindowTitle;
+        // 首帧布局前就设上限，避免内容多时先撑出屏幕再被夹回来
+        MaxHeight = Math.Max(MinHeight, SystemParameters.WorkArea.Height - 24);
 
         SourceInitialized += (_, _) =>
         {
@@ -142,28 +151,41 @@ public partial class WidgetWindow : Window
 
         Loaded += OnLoaded;
         Closed += OnClosed;
+        SizeChanged += (_, _) => { if (IsLoaded) ClampToWorkArea(); };
 
         BuildWeekDots();
 
         // 数据文件外部变更（ncu_sdk sync/import 等）→ 自动重载
         try
         {
-            _watcher = new FileSystemWatcher(_store.Dir, JsonStore.FileName)
+            _watcher = new FileSystemWatcher(_store.Dir, DataStore.FileName)
             {
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
                 EnableRaisingEvents = true,
             };
             _watcher.Changed += (_, _) => DebouncedReload();
             _watcher.Created += (_, _) => DebouncedReload();
+            // Save() 走「写 .tmp 再替换」，磁盘层面是重命名而非新建，只会触发 Renamed
+            _watcher.Renamed += (_, _) => DebouncedReload();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"widget 文件监视不可用：{ex.Message}");
         }
 
-        // 30s 心跳：跨天/跨周自动切换（开学、放假、周日->周一……）
+        // 同进程保存（管理窗口/插件）不经过文件监视，直接通知即可立即刷新
+        _store.Saved += OnStoreSaved;
+
+        // 30s 心跳：跨天/跨周自动切换（开学、放假、周日->周一……）。
+        // 只重算重绘、不重新读盘：Load() 会把 Data 整表换成新对象，
+        // 管理窗口（MainViewModel）手里共享的条目引用会变成游离对象，
+        // 之后的待办/日程编辑会写进游离副本并静默丢失。
         _ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _ticker.Tick += (_, _) => ReloadNow(keepPosition: true);
+        _ticker.Tick += (_, _) =>
+        {
+            Recompute();
+            Render();
+        };
         _ticker.Start();
 
         ReloadNow(keepPosition: true);
@@ -176,6 +198,15 @@ public partial class WidgetWindow : Window
         _store.Load();
         Recompute();
         Render();
+    }
+
+    private void OnStoreSaved()
+    {
+        if (!IsLoaded) return;
+        _uiDispatcher.BeginInvoke(new Action(() =>
+        {
+            if (IsLoaded) ReloadNow(keepPosition: true);
+        }));
     }
 
     private void DebouncedReload()
@@ -193,7 +224,11 @@ public partial class WidgetWindow : Window
             {
                 _debounce.Stop();
                 _debounce = null;
-                if (IsLoaded) ReloadNow();
+                if (!IsLoaded) return;
+                // 本进程自己的保存已由 _store.Saved 立即刷新，这里只处理外部写入；
+                // 否则每次保存都会把共享的 Data 换成新对象，管理窗口的编辑随之丢失。
+                if ((DateTime.UtcNow - _store.LastProgrammaticWriteUtc).TotalMilliseconds < 1500) return;
+                ReloadNow();
             };
             _debounce.Start();
         });
@@ -206,10 +241,12 @@ public partial class WidgetWindow : Window
         _todayWeekday = today.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)today.DayOfWeek;
 
         _inTerm = false;
+        _hasTermStart = false;
         _currentWeek = 1;
         if (DateTime.TryParseExact(d.TermStart, "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime start))
         {
+            _hasTermStart = true;
             _termStartDate = start.Date;
             _termDaysOffset = (today - _termStartDate).Days;
             if (_termDaysOffset >= 0)
@@ -240,42 +277,171 @@ public partial class WidgetWindow : Window
         }
 
         // ---- 本周点阵
-        var hasCourseThisWeek = Enumerable.Range(1, 7).Select(wd =>
-            d.Courses.Any(c => c.Weekday == wd && c.ContainsWeek(_currentWeek))).ToArray();
+        DateTime? termStart = _hasTermStart ? _termStartDate : null;
+        var hasEventThisWeek = Enumerable.Range(1, 7).Select(wd =>
+            d.Events.Any(c => c.Weekday == wd && c.OccursInWeek(_currentWeek, termStart))).ToArray();
         for (int i = 0; i < 7 && i < WeekDots.Children.Count; i++)
         {
             if (WeekDots.Children[i] is Ellipse e)
             {
                 bool isToday = i + 1 == _todayWeekday;
-                e.Fill = isToday ? Brushes.White : (hasCourseThisWeek[i] ? Accent : RowBarNone);
+                e.Fill = isToday ? Brushes.White : (hasEventThisWeek[i] ? Accent : RowBarNone);
                 e.StrokeThickness = isToday ? 1.6 : 0;
                 e.Stroke = isToday ? Brushes.White : Brushes.Transparent;
-                ToolTipService.SetToolTip(e, DayNames[i] + (hasCourseThisWeek[i] ? " · 有课" : ""));
+                ToolTipService.SetToolTip(e, DayNames[i] + (hasEventThisWeek[i] ? " · 有安排" : ""));
             }
         }
 
-        // ---- 今日课程
-        var courses = d.Courses
-            .Where(c => c.Weekday == _todayWeekday && c.ContainsWeek(_currentWeek))
+        // ---- 今日安排
+        var events = d.Events
+            .Where(c => c.Weekday == _todayWeekday && c.OccursInWeek(_currentWeek, termStart))
             .OrderBy(c => c.StartSection)
             .ToList();
 
         TodayList.Children.Clear();
-        TodayEmpty.Visibility = courses.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        TodayCountText.Text = courses.Count > 0 ? $"共 {courses.Count} 门课" : "";
+        TodayEmpty.Visibility = events.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TodayCountText.Text = events.Count > 0 ? $"共 {events.Count} 项" : "";
 
         TimeSpan now = DateTime.Now.TimeOfDay;
-        foreach (Course c in courses)
+        foreach (ScheduleEvent c in events)
         {
-            TodayList.Children.Add(BuildCourseRow(c));
+            TodayList.Children.Add(BuildEventRow(c));
         }
 
-        // ---- 下一节 / 学期状态
+        // ---- 下一项 / 学期状态
         NextPill.Visibility = Visibility.Visible;
-        NextText.Text = BuildNextLine(courses, now);
+        NextText.Text = BuildNextLine(events, now);
+        RenderTodos(d);
+        ScheduleFit();
     }
 
-    private string BuildNextLine(List<Course> courses, TimeSpan now)
+    /// <summary>
+    /// 用主体滚动区的实际溢出量校正窗口高度：内容多则增高，少则缩回，到屏幕可用高度后留滚动。
+    /// 不用 SizeToContent="Height"：它在测量阶段不受 MaxHeight 约束，超高时会被裁掉而不是滚动。
+    /// </summary>
+    private void OnBodyScrollChanged(object? sender, ScrollChangedEventArgs e) => FitHeightFromScroll();
+
+    private void ScheduleFit() =>
+        Dispatcher.BeginInvoke(new Action(FitHeightFromScroll), DispatcherPriority.Loaded);
+
+    private void FitHeightFromScroll()
+    {
+        if (!IsLoaded) return;
+        double overflow = BodyScroll.ExtentHeight - BodyScroll.ViewportHeight;
+        if (Math.Abs(overflow) <= 0.5) return;
+        double target = Math.Clamp(Height + overflow, MinHeight, MaxHeight);
+        if (Math.Abs(target - Height) > 0.5)
+        {
+            Height = target;
+        }
+    }
+
+    private void RenderTodos(StoreData d)
+    {
+        var todos = d.Todos
+            .Where(t => !t.Done)
+            .OrderBy(t => t.HasDue ? 0 : 1)
+            .ThenBy(t => t.Due ?? DateTime.MaxValue)
+            .ThenByDescending(t => t.Priority)
+            .ToList();
+
+        TodoRows.Children.Clear();
+        TodoCountText.Text = todos.Count > 0 ? $"{todos.Count} 项" : "";
+        TodoEmpty.Visibility = todos.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (todos.Count == 0) return;
+
+        foreach (TodoItem todo in todos)
+        {
+            TodoRows.Children.Add(BuildTodoRow(todo));
+        }
+    }
+
+    private UIElement BuildTodoRow(TodoItem todo)
+    {
+        var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        Brush priorityBrush = todo.Priority switch
+        {
+            >= 2 => TodoPriorityUrgent,
+            1 => TodoPriorityImportant,
+            _ => TodoPriorityNormal,
+        };
+        var dot = new Ellipse
+        {
+            Width = 7,
+            Height = 7,
+            Fill = priorityBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 7, 0),
+        };
+        var title = new TextBlock
+        {
+            Text = todo.Title,
+            Foreground = TextMain,
+            FontSize = 11.5,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var priority = new Border
+        {
+            CornerRadius = new CornerRadius(5),
+            Background = priorityBrush,
+            Padding = new Thickness(5, 1, 5, 1),
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = todo.HasPriority ? Visibility.Visible : Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = todo.PriorityText,
+                Foreground = TextMain,
+                FontSize = 8.8,
+                FontWeight = FontWeights.SemiBold,
+            },
+        };
+        string dueText = CompactDue(todo);
+        var due = new TextBlock
+        {
+            Text = dueText,
+            Foreground = todo.IsOverdue ? TodoOverdue
+                : todo.DueState == "today" ? TodoToday : TodoDue,
+            FontSize = 9.5,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = dueText.Length > 0 ? Visibility.Visible : Visibility.Collapsed,
+        };
+
+        Grid.SetColumn(dot, 0);
+        Grid.SetColumn(title, 1);
+        Grid.SetColumn(priority, 2);
+        Grid.SetColumn(due, 3);
+        row.Children.Add(dot);
+        row.Children.Add(title);
+        row.Children.Add(priority);
+        row.Children.Add(due);
+
+        string extra = todo.HasPriority ? $" · {todo.PriorityText}" : "";
+        row.ToolTip = $"{todo.Title}\n{(todo.HasDue ? todo.DueText : "无截止日期")}{extra}";
+        return row;
+    }
+
+    private static string CompactDue(TodoItem todo)
+    {
+        if (todo.Due is not { } due) return "";
+        if (todo.IsOverdue) return $"逾期 {(DateTime.Today - due).Days} 天";
+        int days = (due - DateTime.Today).Days;
+        return days switch
+        {
+            0 => "今天",
+            1 => "明天",
+            _ => $"{due.Month}/{due.Day}",
+        };
+    }
+
+    private string BuildNextLine(List<ScheduleEvent> events, TimeSpan now)
     {
         if (!_inTerm)
         {
@@ -285,17 +451,16 @@ public partial class WidgetWindow : Window
                     ? "明天开学 🎒"
                     : $"距开学还有 {-_termDaysOffset} 天";
             }
-            return "本学期课程已结束 🎉";
+            return "本学期安排已结束 🎉";
         }
-        if (courses.Count == 0)
+        if (events.Count == 0)
         {
-            return _todayWeekday >= 6 ? "周末愉快 🌤" : "今日无课 · 好好休息";
+            return _todayWeekday >= 6 ? "周末愉快 🌤" : "今天没有安排 · 好好休息";
         }
 
-        // 正在上的课（开始时间 <= now <= 结束时间）
-        Course? ongoing = null;
-        Course? upcoming = null;
-        foreach (Course c in courses)
+        ScheduleEvent? ongoing = null;
+        ScheduleEvent? upcoming = null;
+        foreach (ScheduleEvent c in events)
         {
             string st = _sectionMap.TryGetValue(c.StartSection, out var s) ? s.Start : "";
             string en = _sectionMap.TryGetValue(c.EndSection, out var e) ? e.End : "";
@@ -313,17 +478,17 @@ public partial class WidgetWindow : Window
         }
         if (ongoing is not null)
         {
-            return $"正在上：{ongoing.Name} · {Meta(ongoing)}";
+            return $"正在进行：{ongoing.Title} · {Meta(ongoing)}";
         }
         if (upcoming is not null)
         {
-            return $"下一节：{upcoming.Name} · {TimeOf(upcoming)} · {RoomOf(upcoming)}";
+            return $"下一项：{upcoming.Title} · {TimeOf(upcoming)} · {Meta(upcoming)}";
         }
-        return "今日课程已结束";
+        return "今日安排已结束";
     }
 
-    /// <summary>单门课一行：左侧状态色条 + 名称/时间 + 地点·教师。</summary>
-    private UIElement BuildCourseRow(Course c)
+    /// <summary>单条日程一行：左侧状态色条 + 标题/时间 + 地点·参与人。</summary>
+    private UIElement BuildEventRow(ScheduleEvent c)
     {
         TimeSpan now = DateTime.Now.TimeOfDay;
         bool ongoing = false;
@@ -339,14 +504,14 @@ public partial class WidgetWindow : Window
         {
             Width = 3.5,
             CornerRadius = new CornerRadius(2),
-            Background = ongoing ? OnGoing : Accent,
+            Background = ongoing ? OnGoing : EventPalette.SolidBrush(c),
             VerticalAlignment = VerticalAlignment.Stretch,
             Margin = new Thickness(0, 2, 0, 2),
         };
 
         var name = new TextBlock
         {
-            Text = c.Name,
+            Text = c.Title,
             Foreground = TextMain,
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
@@ -394,7 +559,7 @@ public partial class WidgetWindow : Window
         return grid;
     }
 
-    private string TimeOf(Course c)
+    private string TimeOf(ScheduleEvent c)
     {
         if (_sectionMap.TryGetValue(c.StartSection, out var s) &&
             _sectionMap.TryGetValue(c.EndSection, out var e) &&
@@ -405,21 +570,19 @@ public partial class WidgetWindow : Window
         return c.SectionRangeText;
     }
 
-    private string Meta(Course c)
+    private string Meta(ScheduleEvent c)
     {
-        string room = RoomOf(c);
-        string who = string.IsNullOrWhiteSpace(c.Teacher) ? "" : $" · {c.Teacher}";
-        return room.Length > 0 ? $"{room}{who}" : (who.Length > 0 ? who.TrimStart(' ', '·') : "");
+        string location = c.DisplayLocation;
+        string who = string.IsNullOrWhiteSpace(c.DisplayTeacher) ? "" : $" · {c.DisplayTeacher}";
+        if (location.Length > 0) return $"{location}{who}";
+        return who.Length > 0 ? who.TrimStart(' ', '·') : (c.Category.Length > 0 ? c.Category : "未填写地点");
     }
-
-    private static string RoomOf(Course c) =>
-        string.IsNullOrWhiteSpace(c.Room) ? "地点待定" : c.Room;
 
     private static string FormatTerm(StoreData d)
     {
-        // 与 JsonStore.FormatTermName 同规则：规范 9 位 termcode 学期号在末位（202620271 -> 第1学期）
-        string name = d.TermName.Length > 0 ? d.TermName : JsonStore.FormatTermName(d.Termcode);
-        if (name == "未命名学期") return "我的课表";
+        // 与 DataStore.FormatTermName 同规则：规范 9 位 termcode 学期号在末位（202620271 -> 第1学期）
+        string name = d.TermName.Length > 0 ? d.TermName
+            : (d.Termcode.Length > 0 ? DataStore.FormatTermName(d.Termcode) : "我的时间表");
 
         // 宽卡片里优先显示紧凑学期名：2026-2027学年第1学期 → 2026–27 · 第1学期
         var m = Regex.Match(name, @"^(\d{4})-(\d{4})学年第(\d+)学期$");
@@ -484,6 +647,8 @@ public partial class WidgetWindow : Window
         UpdateCursor();
 
         // 透明度恒定由托盘菜单控制（_cfg.Opacity），鼠标悬停不改变。
+
+        ScheduleFit();
     }
 
     public bool IsClickThroughNow() =>
@@ -517,21 +682,40 @@ public partial class WidgetWindow : Window
 
     private void RestorePosition()
     {
+        Rect work = SystemParameters.WorkArea;
         if (!double.IsNaN(_cfg.X) && !double.IsNaN(_cfg.Y))
         {
             Left = _cfg.X;
             Top = _cfg.Y;
-            return;
         }
-        // 默认右下角
-        double wa = SystemParameters.WorkArea.Width;
-        double ha = SystemParameters.WorkArea.Height;
-        Left = Math.Max(0, wa - Width - 40);
-        Top = Math.Max(0, ha - Height - 60);
+        else
+        {
+            // 默认右下角
+            Left = work.Right - LayoutWidth - 40;
+            Top = work.Bottom - LayoutHeight - 60;
+        }
+        // 组件变高或屏幕布局变化后，确保整张卡片仍在工作区内
+        Left = Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - LayoutWidth));
+        Top = Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - LayoutHeight));
+    }
+
+    private double LayoutWidth => ActualWidth > 0 ? ActualWidth : Width;
+
+    private double LayoutHeight => ActualHeight > 0 ? ActualHeight
+        : (double.IsNaN(Height) ? 300 : Height);
+
+    private void ClampToWorkArea()
+    {
+        Rect work = SystemParameters.WorkArea;
+        // 卡片随内容增高，但不能超出屏幕可用高度；到顶后主体内部滚动
+        MaxHeight = Math.Max(MinHeight, work.Height - 24);
+        Left = Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - LayoutWidth));
+        Top = Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - LayoutHeight));
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _store.Saved -= OnStoreSaved;
         _watcher?.Dispose();
         _watcher = null;
         _ticker?.Stop();
@@ -604,8 +788,8 @@ public partial class WidgetWindow : Window
         _lastScreen = screen;
 
         Rect work = SystemParameters.WorkArea;
-        Left = RubberBand(Left + dx, work.Left, work.Right - Width, Width);
-        Top = RubberBand(Top + dy, work.Top, work.Bottom - Height, Height);
+        Left = RubberBand(Left + dx, work.Left, work.Right - LayoutWidth, LayoutWidth);
+        Top = RubberBand(Top + dy, work.Top, work.Bottom - LayoutHeight, LayoutHeight);
 
         RecordDrag(screen);
     }
@@ -635,8 +819,8 @@ public partial class WidgetWindow : Window
 
         (double vx, double vy) = ReleaseVelocity();
         Rect work = SystemParameters.WorkArea;
-        double targetLeft = Math.Clamp(Project(Left, vx), work.Left, work.Right - Width);
-        double targetTop = Math.Clamp(Project(Top, vy), work.Top, work.Bottom - Height);
+        double targetLeft = Math.Clamp(Project(Left, vx), work.Left, work.Right - LayoutWidth);
+        double targetTop = Math.Clamp(Project(Top, vy), work.Top, work.Bottom - LayoutHeight);
 
         // 释放速度交接给弹簧：掠过一小段后落位，带一点动量回弹
         Motion.SpringTo(this, Window.LeftProperty, targetLeft,
@@ -645,7 +829,7 @@ public partial class WidgetWindow : Window
             damping: 0.9, response: 0.42, velocity: vy, tolerance: 0.5, completed: SavePosition);
     }
 
-    /// <summary>允许/禁止左键拖动（关闭后仍可单击打开课程中心）。</summary>
+    /// <summary>允许/禁止左键拖动（关闭后仍可单击打开主窗口）。</summary>
     public void SetDraggable(bool value)
     {
         _cfg.Draggable = value;

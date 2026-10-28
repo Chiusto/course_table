@@ -17,16 +17,16 @@ using NcuCourseTable.Desktop.Services;
 namespace NcuCourseTable.Desktop.Views;
 
 /// <summary>
-/// 周视图画布（原生 WPF，自绘网格与课程块）。
+/// 周视图画布（原生 WPF，自绘网格与日程块）。
 ///
 /// Apple 风格视觉：系统字体、发丝级分隔线、柔和色块、胶囊今日标记与红色现在线。
 /// 布局：
 ///   左上角为节次时间轴，右侧 7 列为周一~周日；
-///   课程块按 (start_section-1)*RowHeight 纵向定位、跨 end-start+1 行。
+///   日程块按 (start_section-1)*RowHeight 纵向定位、跨 end-start+1 行。
 /// 难点处理：
-///   1) 同日重叠课程 -> 贪心分栏（lane），每门课占 1/N 列宽并排显示；
+///   1) 同日重叠日程 -> 贪心分栏（lane），每条日程占 1/N 列宽并排显示；
 ///   2) 节次纵向合并 -> 与 ncu_sdk parser 相同语义，一条记录一个块；
-///   3) 点击/双击 -> 选中详情、双击编辑、空白双击按落点新建课程；
+///   3) 点击/双击 -> 选中详情、双击编辑、空白双击按落点新建日程；
 ///   4) 今日列绘制实时时间线，30 秒刷新一次。
 /// </summary>
 public sealed class WeekBoard : Canvas
@@ -54,8 +54,8 @@ public sealed class WeekBoard : Canvas
     private static readonly FontFamily AppFont = new("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
 
     // ------------------------------------------------------------------ 依赖属性
-    public static readonly DependencyProperty CoursesProperty = DependencyProperty.Register(
-        nameof(Courses), typeof(IEnumerable), typeof(WeekBoard), new PropertyMetadata(null, VisualAffect));
+    public static readonly DependencyProperty EventsProperty = DependencyProperty.Register(
+        nameof(Events), typeof(IEnumerable), typeof(WeekBoard), new PropertyMetadata(null, VisualAffect));
 
     public static readonly DependencyProperty SelectedWeekProperty = DependencyProperty.Register(
         nameof(SelectedWeek), typeof(int), typeof(WeekBoard), new PropertyMetadata(1, VisualAffect));
@@ -75,13 +75,13 @@ public sealed class WeekBoard : Canvas
     public static readonly DependencyProperty TermStartProperty = DependencyProperty.Register(
         nameof(TermStart), typeof(DateTime?), typeof(WeekBoard), new PropertyMetadata(null, VisualAffect));
 
-    public static readonly DependencyProperty SelectedCourseProperty = DependencyProperty.Register(
-        nameof(SelectedCourse), typeof(Course), typeof(WeekBoard), new PropertyMetadata(null, VisualAffect));
+    public static readonly DependencyProperty SelectedEventProperty = DependencyProperty.Register(
+        nameof(SelectedEvent), typeof(ScheduleEvent), typeof(WeekBoard), new PropertyMetadata(null, VisualAffect));
 
-    public IEnumerable? Courses
+    public IEnumerable? Events
     {
-        get => (IEnumerable?)GetValue(CoursesProperty);
-        set => SetValue(CoursesProperty, value);
+        get => (IEnumerable?)GetValue(EventsProperty);
+        set => SetValue(EventsProperty, value);
     }
 
     public int SelectedWeek
@@ -120,15 +120,15 @@ public sealed class WeekBoard : Canvas
         set => SetValue(TermStartProperty, value);
     }
 
-    public Course? SelectedCourse
+    public ScheduleEvent? SelectedEvent
     {
-        get => (Course?)GetValue(SelectedCourseProperty);
-        set => SetValue(SelectedCourseProperty, value);
+        get => (ScheduleEvent?)GetValue(SelectedEventProperty);
+        set => SetValue(SelectedEventProperty, value);
     }
 
     // ------------------------------------------------------------------ 事件
-    public event Action<Course>? CourseClicked;
-    public event Action<Course>? CourseDoubleClicked;
+    public event Action<ScheduleEvent>? EventClicked;
+    public event Action<ScheduleEvent>? EventDoubleClicked;
     public event Action<int, int>? SlotDoubleClicked; // (weekday, section)
 
     // ------------------------------------------------------------------
@@ -187,7 +187,7 @@ public sealed class WeekBoard : Canvas
         DrawGridLines(gridW, colW);
         DrawHeader(gridW, colW);
         DrawAxis();
-        DrawCourseBlocks(gridW, colW);
+        DrawEventBlocks(gridW, colW);
         DrawNowLine(colW);
     }
 
@@ -347,30 +347,32 @@ public sealed class WeekBoard : Canvas
         AddRect(TimeAxisWidth, HeaderHeight + 5 * RowHeight, gridW, 1, RuleStrongBrush);
     }
 
-    // ------------------------------------------------------------- 课程块
-    private void DrawCourseBlocks(double gridW, double colW)
+    // ------------------------------------------------------------- 日程块
+    private void DrawEventBlocks(double gridW, double colW)
     {
-        if (Courses is null)
+        if (Events is null)
         {
             return;
         }
-        var all = Courses.OfType<Course>().Where(c => c.ContainsWeek(SelectedWeek)).ToList();
+        var all = Events.OfType<ScheduleEvent>()
+            .Where(c => c.OccursInWeek(SelectedWeek, TermStart))
+            .ToList();
 
         foreach (int day in Enumerable.Range(1, 7))
         {
-            var dayCourses = all.Where(c => c.Weekday == day)
+            var dayEvents = all.Where(c => c.Weekday == day)
                                 .OrderBy(c => c.StartSection)
                                 .ThenByDescending(c => c.EndSection)
                                 .ToList();
-            if (dayCourses.Count == 0) continue;
+            if (dayEvents.Count == 0) continue;
 
             // 贪心分栏：按开始时间扫掠，能复用空档则复用，否则开新栏
             int[] laneEnd = Array.Empty<int>();
             int laneCount = 0;
-            var lanes = new int[dayCourses.Count];
-            for (int k = 0; k < dayCourses.Count; k++)
+            var lanes = new int[dayEvents.Count];
+            for (int k = 0; k < dayEvents.Count; k++)
             {
-                Course c = dayCourses[k];
+                ScheduleEvent c = dayEvents[k];
                 int fit = -1;
                 for (int li = 0; li < laneCount; li++)
                 {
@@ -390,9 +392,9 @@ public sealed class WeekBoard : Canvas
             }
 
             double colX = TimeAxisWidth + (day - 1) * colW;
-            for (int k = 0; k < dayCourses.Count; k++)
+            for (int k = 0; k < dayEvents.Count; k++)
             {
-                Course c = dayCourses[k];
+                ScheduleEvent c = dayEvents[k];
                 double height = Math.Max(1, (c.EndSection - c.StartSection + 1) * RowHeight - 2 * BlockGap);
                 double wBlock = (colW - 2 * BlockGap - (laneCount - 1) * 2) / laneCount;
                 double x = colX + BlockGap + lanes[k] * (wBlock + 2);
@@ -408,12 +410,12 @@ public sealed class WeekBoard : Canvas
         _ = gridW;
     }
 
-    private FrameworkElement CreateBlock(Course c, double height, double width)
+    private FrameworkElement CreateBlock(ScheduleEvent c, double height, double width)
     {
-        Brush solid = CoursePalette.SolidBrush(c.Name, c.Teacher);
-        Brush soft = CoursePalette.SoftBrush(c.Name, c.Teacher);
-        Brush edge = CoursePalette.EdgeBrush(c.Name, c.Teacher);
-        bool selected = SelectedCourse?.Id == c.Id;
+        Brush solid = EventPalette.SolidBrush(c);
+        Brush soft = EventPalette.SoftBrush(c);
+        Brush edge = EventPalette.EdgeBrush(c);
+        bool selected = SelectedEvent?.Id == c.Id;
         bool compact = height < RowHeight * 1.55;
         bool roomLine = height >= RowHeight * 1.85;
 
@@ -452,7 +454,7 @@ public sealed class WeekBoard : Canvas
         var panel = new StackPanel();
         panel.Children.Add(new TextBlock
         {
-            Text = c.Name,
+            Text = c.Title,
             FontFamily = AppFont,
             FontSize = compact ? 11.8 : 12.3,
             FontWeight = FontWeights.SemiBold,
@@ -485,7 +487,7 @@ public sealed class WeekBoard : Canvas
             {
                 panel.Children.Add(new TextBlock
                 {
-                    Text = c.DisplayRoom,
+                    Text = c.DisplayLocation,
                     FontFamily = AppFont,
                     FontSize = 9.8,
                     Foreground = InkFaintBrush,
@@ -524,11 +526,11 @@ public sealed class WeekBoard : Canvas
             e.Handled = true;
             if (e.ClickCount >= 2)
             {
-                CourseDoubleClicked?.Invoke(c);
+                EventDoubleClicked?.Invoke(c);
             }
             else
             {
-                CourseClicked?.Invoke(c);
+                EventClicked?.Invoke(c);
             }
         };
         return root;
@@ -540,13 +542,15 @@ public sealed class WeekBoard : Canvas
         Motion.SpringTo(scale, ScaleTransform.ScaleYProperty, to, 1.0, response, tolerance: 0.0008);
     }
 
-    private object BuildTooltip(Course c)
+    private object BuildTooltip(ScheduleEvent c)
     {
         string t = _sectionList.TimeText(c.StartSection, c.EndSection);
         string when = $"第 {WeekdayName(c.Weekday)} · 第{c.StartSection}-{c.EndSection}节";
         if (t.Length > 0) when += $"  {t}";
-        return $"{c.Name}\n教师：{(c.DisplayTeacher.Length > 0 ? c.DisplayTeacher : "—")}\n" +
-               $"地点：{(c.DisplayRoom.Length > 0 ? c.DisplayRoom : "—")}\n时间：{when}\n周次：{c.Rule.Display}";
+        return $"{c.Title}\n分类：{c.Category}\n" +
+               $"参与人：{(c.DisplayTeacher.Length > 0 ? c.DisplayTeacher : "—")}\n" +
+               $"地点：{(c.DisplayLocation.Length > 0 ? c.DisplayLocation : "—")}\n" +
+               $"时间：{when}\n安排：{c.ScheduleText}";
     }
 
     // ------------------------------------------------------------- 今日时间线

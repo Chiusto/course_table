@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.IO;
 using System.Threading;
 using System.Windows;
 using NcuCourseTable.Desktop.Interop;
@@ -11,67 +12,72 @@ namespace NcuCourseTable.Desktop;
 public partial class App : Application
 {
     // ------------------------------------------------------------------ 全局状态
-    private JsonStore? _store;
+    private DataStore? _store;
     private WidgetConfig? _cfg;
     private WidgetWindow? _widget;
     private MainWindow? _manager;
     private SettingsWindow? _settings;
+    private PluginManagerWindow? _pluginsWindow;
+    private PluginManager? _pluginManager;
+    private PluginHost? _pluginHost;
+    private ApiServer? _apiServer;
     private DesktopHostKind _host = DesktopHostKind.BottomWindow;
     private Mutex? _singleInstance;
     private bool _widgetMode;
 
-    private const string SingleInstanceName = "Local\\NcuCourseTable.Widget.SingleInstance";
+    private const string SingleInstanceName = "Local\\Timetable.Widget.SingleInstance";
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        DispatcherUnhandledException += (_, args) =>
+        {
+            try
+            {
+                string dir = _store?.Dir ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "timetable-error.log"),
+                    $"{DateTime.Now:O}  {args.Exception}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch
+            {
+                // 日志失败不阻断错误提示
+            }
+            MessageBox.Show("时间表遇到未处理的错误：\n" + args.Exception.Message,
+                "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            args.Handled = true;
+        };
 
-        // 命令行：
-        //   NcuCourseTable.Desktop.exe [--data <目录>] [--demo] [--import <json>] [--headless]
-        //                               [--window] [--host=bottom|wallpaper]
-        // 默认（无 --window）：桌面组件模式 —— 常驻托盘 + 桌面层小组件，不弹任何应用窗口。
-        // --window：显式打开完整管理窗口（旧行为）；--host 仅对桌面组件模式生效。
-        string? dataDir = null, importFile = null, hostArg = null;
-        bool withDemo = false, headless = false, windowMode = false;
+        // 命令行：Timetable.exe [--data <目录>] [--window] [--host=bottom|wallpaper]
+        // 默认：桌面组件模式（常驻托盘 + 桌面卡片）；--window 打开完整管理窗口。
+        string? dataDir = null, hostArg = null;
+        bool windowMode = false;
         for (int i = 0; i < e.Args.Length; i++)
         {
             switch (e.Args[i])
             {
                 case "--data" or "-d" when i + 1 < e.Args.Length: dataDir = e.Args[++i]; break;
-                case "--demo": withDemo = true; break;
-                case "--import" when i + 1 < e.Args.Length: importFile = e.Args[++i]; break;
-                case "--headless": headless = true; break;
                 case "--window": windowMode = true; break;
                 case "--host" when i + 1 < e.Args.Length: hostArg = e.Args[++i]; break;
             }
         }
 
-        // 数据准备（所有模式共用）
-        var store = new JsonStore(dataDir);
-        if (withDemo) store.FillDemo();
-        if (importFile is not null)
-        {
-            int n = store.ImportNcuJson(importFile);
-            if (headless) System.Console.WriteLine($"imported {n} courses -> {store.FilePath}");
-        }
-        if (headless)
-        {
-            Shutdown();
-            return;
-        }
+        _store = new DataStore(dataDir);
+        _store.Load();
+        _cfg = WidgetConfig.Load(_store.Dir);
+        InitializeNutstore();
 
-        _store = store;
-        _cfg = WidgetConfig.Load(store.Dir);
-
-        // 账号登录：凭据 DPAPI 加密存储（credentials.bin）；登录经本地 ncu_sdk 子进程执行
-        _vault = new CredentialVault(store.Dir);
-        _login = new LoginService(store.Dir);
+        _pluginManager = new PluginManager();
+        _pluginManager.LoadAll();
+        _pluginHost = new PluginHost(_store, RefreshAll, PluginNotify);
+        InitializePlugins();
+        StartApiServer();
 
         if (windowMode)
         {
-            // 旧行为：普通应用窗口，关窗即退出
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             ShowManager();
+            ScheduleStartupNutstoreSync();
             return;
         }
 
@@ -80,7 +86,7 @@ public partial class App : Application
         _singleInstance = new Mutex(true, SingleInstanceName, out bool createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("南昌大学课程表桌面组件已在运行。\n双击托盘图标打开设置，或从托盘菜单打开课程中心。",
+            MessageBox.Show("时间表桌面组件已在运行。\n双击托盘图标打开设置，或从托盘菜单打开主窗口。",
                 "已在运行", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
@@ -92,6 +98,41 @@ public partial class App : Application
 
         BuildTray();
         CreateWidget();
+        ScheduleStartupNutstoreSync();
+    }
+
+    private void InitializePlugins()
+    {
+        if (_pluginManager is null || _pluginHost is null) return;
+        foreach (LoadedPlugin loaded in _pluginManager.Plugins)
+        {
+            try
+            {
+                loaded.Instance.Initialize(_pluginHost);
+            }
+            catch (Exception ex)
+            {
+                _pluginManager.ReportError(loaded.AssemblyPath,
+                    $"{loaded.Instance.Name} 初始化失败：{ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>启动本地 HTTP API（环境变量 TIMETABLE_API_DISABLED=1 可关闭）。</summary>
+    private void StartApiServer()
+    {
+        if (ApiServer.IsDisabled() || _store is null) return;
+        try
+        {
+            _apiServer = new ApiServer(_store, RefreshAll);
+            _apiServer.Start();
+            System.Diagnostics.Debug.WriteLine($"[api] 本地 API 已启动：{_apiServer.BaseUrl}");
+        }
+        catch (Exception ex)
+        {
+            _apiServer = null;
+            System.Diagnostics.Debug.WriteLine($"[api] 启动失败：{ex.Message}");
+        }
     }
 
     // ================================================================= 桌面小组件
@@ -99,8 +140,6 @@ public partial class App : Application
     {
         _widget = new WidgetWindow(_store!, _cfg!, _host)
         {
-            // Opacity<1 会让 WPF 给窗口补 WS_EX_LAYERED，而分层子窗口在壁纸层不被
-            // DWM 合成（屏幕上看不到）→ wallpaper 模式禁用整体透明度
             Opacity = _host == DesktopHostKind.WallpaperWorkerW ? 1d : _cfg!.Opacity,
         };
         _widget.ManageRequested += EnsureManager;
@@ -115,7 +154,6 @@ public partial class App : Application
         _widget = null;
     }
 
-    /// <summary>切换桌面层级（图标上层 / 壁纸层）：重建小组件。</summary>
     internal void SwitchHost(DesktopHostKind kind)
     {
         if (_host == kind) return;
@@ -127,7 +165,6 @@ public partial class App : Application
     }
 
     // ================================================================= 设置面板
-    /// <summary>打开设置面板（已开则激活）；显隐/锁定/层级/透明度/自启/刷新集中于此。</summary>
     internal void ShowSettings()
     {
         if (_settings is { IsLoaded: true })
@@ -142,7 +179,6 @@ public partial class App : Application
         BringToFront(_settings);
     }
 
-    /// <summary>把已有窗口切到前台（Windows 前台锁会让单纯 Activate 偶尔失效）。</summary>
     private static void BringToFront(Window w)
     {
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
@@ -156,26 +192,20 @@ public partial class App : Application
     }
 
     // ---------------- 设置面板读取的状态快照 ----------------
-    internal bool HasAccount => (_vault?.UsernameOrEmpty ?? "").Length > 0;
-    internal string MaskedAccount => MaskAccount(_vault?.UsernameOrEmpty ?? "");
     internal DesktopHostKind CurrentHost => _host;
     internal double WidgetOpacity => _cfg?.Opacity ?? 1.0;
     internal bool IsWidgetShown => _widget is { IsLoaded: true } w && w.IsVisible;
     internal bool IsWidgetLocked => _widget is { } w && w.IsClickThroughNow();
     internal bool IsWidgetDraggable => _cfg?.Draggable ?? true;
+    internal DataStore Store => _store!;
+    internal int PendingTodoCount => _store?.Data.Todos.Count(t => !t.Done) ?? 0;
 
-    // ---------------- 设置面板触发的动作（与托盘语义一致） ----------------
+    // ---------------- 设置面板触发的动作 ----------------
     internal void SetWidgetVisible(bool visible)
     {
         if (_widget is null) return;
-        if (visible)
-        {
-            _widget.ShowFromTray();
-        }
-        else
-        {
-            _widget.HideFromTray();
-        }
+        if (visible) _widget.ShowFromTray();
+        else _widget.HideFromTray();
     }
 
     internal void SetWidgetLocked(bool locked)
@@ -211,6 +241,17 @@ public partial class App : Application
         Services.Openers.OpenDataDir(_store!.Dir);
     }
 
+    internal void UpdateTerm(string name, string startMonday, int totalWeeks)
+    {
+        if (_store is null) return;
+        _store.Data.TermName = (name ?? "").Trim();
+        _store.Data.TermStart = (startMonday ?? "").Trim();
+        _store.Data.TotalWeeks = Math.Clamp(totalWeeks, 1, 60);
+        _store.Save();
+        RefreshAll();
+        RefreshTrayChecks();
+    }
+
     // ================================================================= 管理窗口
     internal void ShowManager()
     {
@@ -220,33 +261,23 @@ public partial class App : Application
             return;
         }
         _manager = new MainWindow(new MainViewModel(_store!));
-        _manager.LoginRequested += LoginAndSync;
+        _manager.PluginsRequested += ShowPluginManager;
         _manager.SettingsRequested += ShowSettings;
         _manager.Closed += (_, _) =>
         {
             if (!_widgetMode)
             {
-                // --window 模式：关窗即退出
                 Shutdown();
             }
         };
-        _manager.SetLoginAccount(_vault?.UsernameOrEmpty ?? "");
-        if (_widgetMode)
-        {
-            // 管理窗口是普通应用窗口：允许最小化/置于普通窗口层即可
-            _manager.Show();
-        }
-        else
-        {
-            _manager.Show();
-            MainWindow = _manager;
-        }
+        _manager.Show();
+        if (!_widgetMode) MainWindow = _manager;
         BringToFront(_manager);
     }
 
     private void EnsureManager() => ShowManager();
 
-    // ================================================================= 通用动作（托盘 + 面板共用）
+    // ================================================================= 通用动作
     internal void RefreshAll()
     {
         if (_widget is { IsLoaded: true })
@@ -255,8 +286,18 @@ public partial class App : Application
         }
         if (_manager is { IsLoaded: true } && _manager.DataContext is MainViewModel vm)
         {
-            vm.ReloadFromDisk();
+            vm.ReloadFromDisk(silent: true);
         }
+        RefreshTrayChecks();
+    }
+
+    internal void PluginNotify(string message)
+    {
+        if (_manager is { IsLoaded: true } && _manager.DataContext is MainViewModel vm)
+        {
+            vm.SetStatus(message);
+        }
+        System.Diagnostics.Debug.WriteLine("[plugin] " + message);
     }
 
     private void ExitAll()
@@ -269,6 +310,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _apiServer?.Dispose();
+        _apiServer = null;
+        ShutdownNutstore();
         _tray?.Dispose();
         _tray = null;
         _singleInstance?.ReleaseMutex();

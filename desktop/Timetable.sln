@@ -1,0 +1,39 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NcuCourseTable.Desktop", "NcuCourseTable.Desktop\NcuCourseTable.Desktop.csproj", "{DC21FC78-0321-40DD-ADD4-802A09E2E8CE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Timetable.Plugins.Abstractions", "Timetable.Plugins.Abstractions\Timetable.Plugins.Abstractions.csproj", "{D9FC770F-14C8-4F47-A0A0-9F5C1542BE9C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "plugins", "plugins", "{50F33B26-638B-4FFE-B64E-66C00DF126A6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NcuCourseSource", "plugins\NcuCourseSource\NcuCourseSource.csproj", "{20BB8114-4954-4E24-BD1A-66E2432862FB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DC21FC78-0321-40DD-ADD4-802A09E2E8CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC21FC78-0321-40DD-ADD4-802A09E2E8CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC21FC78-0321-40DD-ADD4-802A09E2E8CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC21FC78-0321-40DD-ADD4-802A09E2E8CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D9FC770F-14C8-4F47-A0A0-9F5C1542BE9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D9FC770F-14C8-4F47-A0A0-9F5C1542BE9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D9FC770F-14C8-4F47-A0A0-9F5C1542BE9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D9FC770F-14C8-4F47-A0A0-9F5C1542BE9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{20BB8114-4954-4E24-BD1A-66E2432862FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{20BB8114-4954-4E24-BD1A-66E2432862FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20BB8114-4954-4E24-BD1A-66E2432862FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{20BB8114-4954-4E24-BD1A-66E2432862FB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{20BB8114-4954-4E24-BD1A-66E2432862FB} = {50F33B26-638B-4FFE-B64E-66C00DF126A6}
+	EndGlobalSection
+EndGlobal

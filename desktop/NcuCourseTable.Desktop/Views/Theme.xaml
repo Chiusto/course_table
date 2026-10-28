@@ -33,6 +33,14 @@
     <SolidColorBrush x:Key="SwitchOffBrush" Color="#E5E5EA"/>
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#9A9AA0"/>
 
+    <!-- 笔记便签配色（浅色底，白字卡上用） -->
+    <SolidColorBrush x:Key="NoteDefaultBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="NoteYellowBrush" Color="#FFF6D8"/>
+    <SolidColorBrush x:Key="NoteGreenBrush" Color="#E6F6E9"/>
+    <SolidColorBrush x:Key="NoteBlueBrush" Color="#E7F1FF"/>
+    <SolidColorBrush x:Key="NotePinkBrush" Color="#FDE8EE"/>
+    <SolidColorBrush x:Key="NotePurpleBrush" Color="#F1E9FC"/>
+
     <!-- ============================================================ 字体 -->
     <FontFamily x:Key="AppFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
     <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI Semibold, Segoe UI, Microsoft YaHei UI</FontFamily>
@@ -366,6 +374,36 @@
         <Setter Property="Template" Value="{StaticResource SecondaryButtonTemplate}"/>
     </Style>
 
+    <Style x:Key="MenuRowButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Foreground" Value="{StaticResource LabelPrimaryBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Row" Background="{TemplateBinding Background}"
+                            CornerRadius="7" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Row" Property="Background"
+                                    Value="{StaticResource FillBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="BtnGhost" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource LabelSecondaryBrush}"/>
@@ -595,6 +633,42 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
         <Setter Property="Template" Value="{StaticResource CheckSquareTemplate}"/>
+    </Style>
+
+    <!-- ============================================================ 圆形勾选（待办） -->
+    <ControlTemplate x:Key="CheckCircleTemplate" TargetType="CheckBox">
+        <Border Width="24" Height="24" Background="Transparent">
+            <Border x:Name="Circle" Width="21" Height="21" CornerRadius="10.5"
+                    Background="Transparent"
+                    BorderBrush="{StaticResource SeparatorStrongBrush}" BorderThickness="1.6"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Path x:Name="Mark" Data="M 3.5 8 L 7 11.5 L 13 4.5"
+                      Stroke="White" StrokeThickness="1.8"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Visibility="Collapsed" Stretch="Uniform" Margin="4"/>
+            </Border>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Circle" Property="Background" Value="{StaticResource AccentBrush}"/>
+                <Setter TargetName="Circle" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Circle" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style x:Key="CheckCircle" TargetType="CheckBox">
+        <Setter Property="Width" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+        <Setter Property="Template" Value="{StaticResource CheckCircleTemplate}"/>
     </Style>
 
     <!-- ============================================================ 分段控件 -->

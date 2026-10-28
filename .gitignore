@@ -38,5 +38,9 @@ data/
 credentials.bin
 *.db
 
+# 坚果云同步配置与基线（含加密密码 / 个人课表）
+nutstore.json
+nutstore-state.json
+
 # 发布产物
 dist/

@@ -7,8 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
-    <Reference Include="NcuCourseTable.Desktop">
-      <HintPath>..\..\NcuCourseTable.Desktop\bin\Release\net8.0-windows\NcuCourseTable.Desktop.dll</HintPath>
-    </Reference>
+    <ProjectReference Include="..\..\plugins\NcuCourseSource\NcuCourseSource.csproj" />
   </ItemGroup>
 </Project>

@@ -17,7 +17,7 @@ from PIL import Image  # noqa: E402
 u = ctypes.windll.user32
 
 WIDGET_TITLE = "NcuCourseTable.DesktopWidget"
-MANAGER_TITLE = "南昌大学课程表组件"
+MANAGER_TITLE = "时间表"
 WS_EX_APPWINDOW = 0x00040000
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_TRANSPARENT = 0x00000020

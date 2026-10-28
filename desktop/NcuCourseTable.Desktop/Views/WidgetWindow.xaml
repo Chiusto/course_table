@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="NcuCourseTable.DesktopWidget"
-        Width="372" Height="352"
+        Width="372" Height="280" MinHeight="280"
         WindowStyle="None" ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
         Topmost="False" WindowStartupLocation="Manual"
         FontFamily="{StaticResource AppFont}"
@@ -33,9 +33,8 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <!-- 星号行：窗口高度确定后由它吃掉剩余空间，内容超高时才会出现滚动条 -->
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 头部：学期 + 教学周 pill -->
@@ -45,7 +44,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock x:Name="TermText" Text="课表" FontSize="13.5"
+                        <TextBlock x:Name="TermText" Text="时间表" FontSize="13.5"
                                    FontWeight="SemiBold" Foreground="White"
                                    VerticalAlignment="Center" MaxWidth="170"
                                    TextTrimming="CharacterEllipsis"/>
@@ -69,31 +68,52 @@
                     <!-- code-behind 填充 7 个圆点 -->
                 </StackPanel>
 
-                <!-- 今日课程 -->
-                <Grid Grid.Row="2" Margin="0,0,0,6">
-                    <TextBlock Text="今日课程" FontSize="11" Foreground="#9A9AA0"/>
-                    <TextBlock x:Name="TodayCountText" HorizontalAlignment="Right"
-                               FontSize="10.5" Foreground="#6F6F75"
-                               Typography.NumeralAlignment="Tabular"/>
-                </Grid>
+                <!-- 主体：随内容增高，超过可用高度后整体滚动 -->
+                <ScrollViewer x:Name="BodyScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="0,0,2,0" Focusable="False"
+                              ScrollChanged="OnBodyScrollChanged">
+                    <StackPanel>
+                        <!-- 今日安排 -->
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="今日安排" FontSize="11" Foreground="#9A9AA0"/>
+                            <TextBlock x:Name="TodayCountText" HorizontalAlignment="Right"
+                                       FontSize="10.5" Foreground="#6F6F75"
+                                       Typography.NumeralAlignment="Tabular"/>
+                        </Grid>
 
-                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="TodayList" Margin="0,0,0,2"/>
+                        <Grid>
+                            <StackPanel x:Name="TodayList" Margin="0,0,0,2"/>
+                            <TextBlock x:Name="TodayEmpty" Text="今天没有安排 · 享受空闲"
+                                       Foreground="#8E8E93" FontSize="12.5"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Visibility="Collapsed"/>
+                        </Grid>
+
+                        <!-- 下一项 -->
+                        <Border x:Name="NextPill" CornerRadius="11" Background="#1FFFFFFF"
+                                BorderBrush="#1AFFFFFF" BorderThickness="1"
+                                Padding="10,7" Margin="0,6,0,0">
+                            <TextBlock x:Name="NextText" Text="下一项：--"
+                                       FontSize="11.5" Foreground="#D4D4D8"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </Border>
+
+                        <!-- 待办 -->
+                        <Border Height="1" Background="#1AFFFFFF" Margin="0,7,0,0"/>
+                        <Grid Margin="0,8,0,6">
+                            <TextBlock Text="待办" FontSize="11" Foreground="#9A9AA0"/>
+                            <TextBlock x:Name="TodoCountText" HorizontalAlignment="Right"
+                                       FontSize="10.5" Foreground="#6F6F75"
+                                       Typography.NumeralAlignment="Tabular"/>
+                        </Grid>
+                        <Grid>
+                            <StackPanel x:Name="TodoRows"/>
+                            <TextBlock x:Name="TodoEmpty" Text="暂无待办" FontSize="11"
+                                       Foreground="#6F6F75" Margin="0,2,0,2" Visibility="Collapsed"/>
+                        </Grid>
+                    </StackPanel>
                 </ScrollViewer>
-
-                <TextBlock x:Name="TodayEmpty" Grid.Row="3" Text="今日无课 · 好好休息"
-                           Foreground="#8E8E93" FontSize="12.5" HorizontalAlignment="Center"
-                           VerticalAlignment="Center" Visibility="Collapsed"/>
-
-                <!-- 下一节 -->
-                <Border x:Name="NextPill" Grid.Row="4" CornerRadius="11" Background="#1FFFFFFF"
-                        BorderBrush="#1AFFFFFF" BorderThickness="1"
-                        Padding="10,7" Margin="0,6,0,0">
-                    <TextBlock x:Name="NextText" Text="下一节：--"
-                               FontSize="11.5" Foreground="#D4D4D8"
-                               TextTrimming="CharacterEllipsis"/>
-                </Border>
             </Grid>
         </Grid>
     </Border>

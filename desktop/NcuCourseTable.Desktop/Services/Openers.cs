@@ -19,12 +19,12 @@ public static class Openers
         return "https://uri.amap.com/search?keyword=" + Uri.EscapeDataString(kw);
     }
 
-    public static void OpenMap(Course course)
+    public static void OpenMap(ScheduleEvent scheduleEvent)
     {
-        string kw = course.Room;
+        string kw = scheduleEvent.DisplayLocation;
         if (string.IsNullOrWhiteSpace(kw))
         {
-            kw = course.Name; // 无地点时按课程名搜索
+            kw = scheduleEvent.Title; // 无地点时按日程标题搜索
         }
         OpenUrl(MapSearchUrl(kw));
     }
@@ -65,4 +65,6 @@ public static class Openers
             OpenUrl(fallbackUrl);
         }
     }
+
+    public static void OpenDirectory(string dir) => OpenDataDir(dir);
 }

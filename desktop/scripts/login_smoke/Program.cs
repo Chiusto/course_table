@@ -1,6 +1,6 @@
-// 冒烟测试：直接调用重新构建的 LoginService（与托盘“登录并刷新课表”同一代码路径），
-// 在未设置 PYTHONPATH 的环境下运行，验证 KeyNotFoundException 已修复。
-using NcuCourseTable.Desktop.Services;
+// 冒烟测试：直接调用 NcuCourseSource 插件的 LoginService（与插件窗口“登录并同步”同一代码路径），
+// 在未设置 PYTHONPATH 的环境下运行，验证环境探测与 KeyNotFoundException 修复。
+using NcuCourseSource;
 
 string dataDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -15,8 +15,8 @@ Console.WriteLine("python = " + (svc.GetType()
     .GetField("_python", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
     .GetValue(svc) as Lazy<string?>)!.Value ?? "<null>");
 
-LoginOutcome outcome = svc.LoginAndSyncAsync(cred.Username, cred.Password).GetAwaiter().GetResult();
-Console.WriteLine($"Ok={outcome.Ok}, CourseCount={outcome.CourseCount}");
+SyncOutcome outcome = svc.LoginAndSyncAsync(cred.Username, cred.Password).GetAwaiter().GetResult();
+Console.WriteLine($"Ok={outcome.Ok}, CourseCount={outcome.CourseCount}, Term={outcome.Termcode}");
 Console.WriteLine($"Message: {outcome.Message}");
 if (!string.IsNullOrEmpty(outcome.Detail)) Console.WriteLine($"Detail: {outcome.Detail}");
 return outcome.Ok ? 0 : 1;

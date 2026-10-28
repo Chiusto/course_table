@@ -1,6 +1,8 @@
-# 桌面嵌入实现与验证
+# 桌面组件实现与验证（时间表）
 
-> 目标：把课程表组件**真正嵌入**到 Windows 桌面层——默认 **bottom 模式**（置底、图标之上、不占任务栏、真实可见）已落地；wallpaper 模式代码路径完整但** 因 WPF 渲染限制屏幕上不可见**（详见 §3），仅作断言层面通过。
+> 目标：把时间表组件**真正嵌入**到 Windows 桌面层——默认 **bottom 模式**（置底、图标之上、不占任务栏、真实可见）已落地；wallpaper 模式代码路径完整但** 因 WPF 渲染限制屏幕上不可见**（详见 §3），仅作断言层面通过。
+>
+> 2026-10 起本项目已由“南昌大学课程表”改造为通用「时间表」：核心只含周视图、日程、待办与插件宿主；南大课程同步移到 `desktop/plugins/NcuCourseSource` 插件，账号与登录入口也随插件迁出（见 §9）。
 
 ---
 
@@ -11,13 +13,15 @@
 │                                                    │
 │   ┌──────────── 桌面层小组件（深色玻璃卡片）────┐  │  ← 本组件绘制层
 │   │  2026-2027学年第1学…  第 6 / 20 周          │  │  bottom：桌面最底层 · 图标之上，真实可见
-│   │  今日课程              共 1 节                │  │  wallpaper：壁纸之上 · 图标之下（实验性）
-│   │  今日课程              共 1 节                │  │
+│   │  今日安排              共 2 项                │  │  wallpaper：壁纸之上 · 图标之下（实验性）
 │   │  ▎组合数学A            09:50-12:10           │  │
 │   │    研究生院505 · 幸玮                        │  │
-│   │                                            │  │
 │   │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
 │   │  正在上：组合数学A · 研究生院505 · 幸玮     │  │
+│   │  待办 · 3 项                                │  │
+│   │  ● 写改造方案                         今天    │  │
+│   │  ● 读论文                          逾期 5 天  │  │
+│   │  ● 买牛奶                                  │  │
 │   └────────────────────────────────────────────┘  │
 │                                                    │
 │  （壁纸 / 普通应用窗口 / 图标）                    │
@@ -30,9 +34,9 @@
 关键约束：
 
 1. **不占任务栏**：用 `WS_EX_TOOLWINDOW`（去掉 AppWindow 标志），Win11 任务栏不再显示按钮。
-2. **不弹独立窗口**：默认启动不创建任何应用窗口；管理窗口（编辑课程、查看周表）**单击桌面组件卡片**即可打开。
+2. **不弹独立窗口**：默认启动不创建任何应用窗口；主窗口（编辑日程、查看周表）**单击桌面组件卡片**即可打开。
 3. **常驻后台**：进程常驻 System Tray，单实例互斥锁（`Local\NcuCourseTable.Widget.SingleInstance`）防止重复启动。
-4. **与桌面融为一体**：组件直接绘制在系统桌面层级；鼠标可穿透（锁定后开 `WS_EX_TRANSPARENT`）；未锁定时单击卡片打开管理窗口、左键拖拽移动位置（控制菜单统一收在系统托盘）。
+4. **与桌面融为一体**：组件直接绘制在系统桌面层级；鼠标可穿透（锁定后开 `WS_EX_TRANSPARENT`）；未锁定时单击卡片打开主窗口、左键拖拽移动位置（控制菜单统一收在系统托盘）。
 5. **跨周自动切换**：30s 心跳 + 学期起始日计算当前周次；学期外显示完整周表。
 6. **外部数据自动同步**：`FileSystemWatcher` + 350ms 去抖，`ncu_sdk sync/import` 一导出，组件即时刷新。
 
@@ -48,11 +52,11 @@
 | 单实例 | 无 | `Local\…SingleInstance` 互斥锁，重复启动弹提示并退出 |
 | 窗口层级 | 普通 Topmost 窗口，父=本进程隐藏 owner | ① wallpaper：`SetParent(WorkerW)`（实验性，见 §3）；② **bottom（默认）：置底非 Topmost 顶层窗口**；二者均脱离应用窗口 Z 序 |
 | 样式 | 普通 WPF Window | `WindowStyle=None` + `WS_EX_TOOLWINDOW` 去任务栏；bottom 用透明玻璃层（`AllowsTransparency`），wallpaper 用不透明底 + DWM 圆角（避开分层子窗口不合成问题） |
-| 鼠标 | 默认命中 | `WS_EX_TRANSPARENT` 锁定后穿透；未锁定时响应单击（开管理窗口）/ 左键拖拽（控制统一走托盘） |
-| 数据刷新 | 仅手动 `ReloadFromDisk` | `FileSystemWatcher(_store.Dir, courses.json)` + 350ms 去抖 + 30s 心跳；UI 线程 DispatcherTimer 修复（详见 §5.3） |
+| 鼠标 | 默认命中 | `WS_EX_TRANSPARENT` 锁定后穿透；未锁定时响应单击（开主窗口）/ 左键拖拽（控制统一走托盘） |
+| 数据刷新 | 仅手动 `ReloadFromDisk` | `FileSystemWatcher(_store.Dir, schedule.json)` + 350ms 去抖 + 30s 心跳；UI 线程 DispatcherTimer 修复（详见 §5.3） |
 | 进程退出 | 用户关主窗 | 托盘“退出” / 任务栏右键“关闭窗口” / `App.ExitAll()`；常驻到显式退出 |
 | 互操作 | 无 | 新增 `Interop/Native.cs`、`Interop/DesktopHost.cs`、`Interop/WindowChrome.cs` 三组 P/Invoke + WorkerW 查找算法 |
-| 数据目录 | 同 | 同 `JsonStore`（兼容 ncu_sdk `to_dict`）；`--data` 覆盖目录 |
+| 数据目录 | 同 | 同 `DataStore`（兼容 ncu_sdk `to_dict`）；`--data` 覆盖目录 |
 | 开机自启 | 无 | `WidgetConfig.AutoStart` + `HKCU\…\Run` 写入 |
 
 ### 2.2 视觉层
@@ -60,7 +64,7 @@
 | 维度 | 独立窗口 | 桌面嵌入 |
 |---|---|---|
 | 用户视觉感受 | 弹出一个“程序窗口”，可被任务栏/Alt-Tab 选中 | “像壁纸上的一个小组件”，任务栏/Alt-Tab 都不出现 |
-| 鼠标交互 | 全程命中 | 未锁定：单击卡片打开管理窗口 / 左键拖拽移动；锁定后完全穿透（右键菜单已并入托盘，托盘不再含“打开管理窗口”） |
+| 鼠标交互 | 全程命中 | 未锁定：单击卡片打开主窗口 / 左键拖拽移动；锁定后完全穿透（右键菜单已并入托盘，托盘不再含“打开主窗口”） |
 | Z 序 | 始终在普通窗口之上 | bottom（默认）= 永远在最底层，真实可见；wallpaper = 壁纸之上、图标之下（实验性，屏幕上不渲染） |
 | 背景 | 纯色面板 | 圆角深色玻璃卡（`#1F2A3E` 底 + `#FFFFFF` / `#9FB0C8` / `#7C8CA3` 文字层级） |
 | 自我标识 | 标准 Windows 标题栏 | 无标题栏；唯一入口是系统托盘 NotifyIcon |
@@ -126,7 +130,7 @@
 2. **新增 WidgetWindow**（`Views/WidgetWindow.xaml(.cs)`）
    - 无标题栏 + 透明背景 + 深色玻璃卡 XAML。
    - 自持 `FileSystemWatcher`（数据文件外部变更）+ 30s `DispatcherTimer`（跨周检测）。
-   - 单击开管理窗口 / 左键拖拽 / 锁定穿透 / 下一节课提示（控制统一走托盘，右键菜单已并入）。
+   - 单击开主窗口 / 左键拖拽 / 锁定穿透 / 下一项提示（控制统一走托盘，右键菜单已并入）。
    - 公开 `IsClickThroughNow()`、`ReloadNow()`。
 
 3. **App 启动路由**（`App.xaml.cs`）
@@ -149,36 +153,42 @@
 - **嵌入后 `FindWindowW` 失效**：`SetParent(WorkerW)` 后 WPF 顶层窗口变成 WorkerW 子窗口，`FindWindowW`（仅查顶层）拿不到。验证脚本改用 `EnumWindows + EnumChildWindows` 全树搜索。
 - **`GetParent` 误判**：WPF 顶层窗口有隐藏 owner，`GetParent` 永远返回本进程隐藏 HWND（≠ 嵌入父）。改用 `GetAncestor(GA_PARENT)` 取真实父窗口。
 - **任务栏按钮去不掉**：必须显式清掉 `WS_EX_APPWINDOW`（默认会被加回）。`WindowChrome` 在 `SourceInitialized` 阶段一次性设好所有 exstyle。
-- **WS_EX_TRANSPARENT 与 IsLoaded**：置底模式在“锁定”后开启穿透；未锁定时可直接响应鼠标（单击开管理窗口 / 拖拽移动），锁定后需先经托盘解锁。
+- **WS_EX_TRANSPARENT 与 IsLoaded**：置底模式在“锁定”后开启穿透；未锁定时可直接响应鼠标（单击开主窗口 / 拖拽移动），锁定后需先经托盘解锁。
 - **Z 序被其它置顶窗口顶上来**：置底模式每帧用 `SetWindowPos(HWND_BOTTOM)` 防回归（Win11 24H2 行为变化）。
 - **FileSystemWatcher 在 FSW 线程触发**：`DispatcherTimer` 默认绑到当前线程（FSW 线程）—— 该线程无消息泵，Tick 永不触发，刷新其实从未生效。修复：捕获 UI `Dispatcher.CurrentDispatcher` 并通过 `BeginInvoke` 创建 timer。
 - **csproj WinForms / WPF 同进程**：必须显式 `<Using Remove="System.Windows.Forms"/>`，否则 `System.Windows.Rectangle` 与 `System.Drawing.Rectangle` 冲突（CS0104）。
 - **Run Binding 默认 TwoWay 触发崩溃**：所有 WPF `Run` 标签加 `Mode=OneWay`。
 - **WS_EX_TOOLWINDOW 组件遇“显示桌面”会凭空消失**：普通应用被显示桌面/最小化后有任务栏按钮可还原；本组件无任务栏按钮、不进 Alt+Tab，一旦被最小化/隐藏/DWM 遮蔽就“消失”（2026-09-04 用户实测：点任务栏右下角细条后组件不见，要点任务栏里的任务恢复焦点才回来）。对策见 §6.5 守卫。
 
-### 5.3 文件清单（新增 / 修改）
+### 5.3 文件清单（核心 / 插件）
 
 ```
-desktop/NcuCourseTable.Desktop/
-├── Interop/
-│   ├── Native.cs              # P/Invoke 声明
-│   ├── DesktopHost.cs         # Progman/WorkerW 查找 + SetParent + 24H2 下钻
-│   └── WindowChrome.cs        # 去任务栏 + 鼠标穿透
-├── Services/
-│   ├── WidgetConfig.cs        # 位置/透明度/锁定/Host/AutoStart 持久化
-│   ├── CredentialVault.cs     # 账号凭据 DPAPI 加密存储（credentials.bin，不落明文）
-│   └── LoginService.cs        # 子进程调 ncu_sdk：login→sync→export→原子导入
-├── Views/
-│   ├── WidgetWindow.xaml      # 深色玻璃卡片
-│   ├── WidgetWindow.xaml.cs   # 单击开窗/拖动/锁定/FileSystemWatcher（控制入口在托盘）
-│   └── CredentialDialog.xaml  # 账号配置：必填校验/输入提示/保存后自动登录
-├── App.xaml                   # 多窗口资源合并
-├── App.xaml.cs                # 启动路由 + 单实例 + 宿主切换
-├── App.Tray.cs                # NotifyIcon 托盘菜单
-└── App.Account.cs             # 托盘“打开配置 / 登录并刷新课表”入口与状态
+desktop/
+├── Timetable.sln
+├── NcuCourseTable.Desktop/
+│   ├── Interop/
+│   │   ├── Native.cs              # P/Invoke 声明
+│   │   ├── DesktopHost.cs         # Progman/WorkerW 查找 + SetParent + 24H2 下钻
+│   │   └── WindowChrome.cs        # 去任务栏 + 鼠标穿透
+│   ├── Models/                    # ScheduleEvent / TodoItem / StoreData / WeekRule
+│   ├── Services/
+│   │   ├── DataStore.cs           # schedule.json 原子读写 + 旧 courses.json 迁移
+│   │   ├── PluginManager.cs       # 扫描 plugins/ 并载入 DLL
+│   │   ├── PluginHost.cs          # 向插件暴露 ReplaceEvents / SetTerm 等能力
+│   │   └── WidgetConfig.cs        # 位置/透明度/锁定/Host/AutoStart 持久化
+│   ├── Views/
+│   │   ├── MainWindow.xaml        # 周视图 + 详情 / 待办侧栏
+│   │   ├── EventDialog.xaml       # 日程新增/编辑（每周或单次、分类、颜色）
+│   │   ├── TodoDialog.xaml        # 待办截止日期/优先级/备注
+│   │   ├── PluginManagerWindow.xaml
+│   │   └── WidgetWindow.xaml      # 深色玻璃卡片
+│   ├── App.xaml.cs                # 启动路由 + 单实例 + 宿主切换 + 插件载入
+│   └── App.Tray.cs                # NotifyIcon 托盘菜单
+├── Timetable.Plugins.Abstractions/
+└── plugins/
+    └── NcuCourseSource/           # 账号配置 / CAS 登录 / gmsstu 同步 / JSON 导入
 ```
 
-`desktop/sample_data/courses.json`、`desktop/scripts/verify_embed.py`、`desktop/scripts/capture_window.py`、`desktop/scripts/verify_refresh.py` 为新增验证脚本与样本数据。
 
 ---
 
@@ -191,7 +201,7 @@ desktop/NcuCourseTable.Desktop/
 | `verify_embed.py bottom` | 置底模式断言：无任务栏、非 Topmost、置底、可控穿透 |
 | `verify_embed.py wallpaper` | 壁纸层断言：`parent_class ∈ {WorkerW, Progman}`、恒穿透、无任务栏 |
 | `verify_embed.py window` | 旧应用窗口模式仍能正常 Show() |
-| `verify_refresh.py` | 端到端自动刷新：启动 → 改 `courses.json` → 等 watcher → 截屏比对 → 还原 → 二次截屏 |
+| `verify_refresh.py` | 端到端自动刷新：启动 → 改 `schedule.json` → 等 watcher → 截屏比对 → 还原 → 二次截屏 |
 | `capture_window.py` | 通用 `PrintWindow(PW_RENDERFULLCONTENT)` 抓图（被遮挡窗口也能抓） |
 | `ImageChops.difference` | 像素级差分（threshold=20 抗反走样） |
 
@@ -278,7 +288,7 @@ wallpaper 模式断言全部通过（`desktop/verify_widget_wallpaper.png`），
 # 1. 启动组件（默认 bottom 模式；真实可见）
 ./NcuCourseTable.Desktop.exe --data %LOCALAPPDATA%/NcuCourseTable --demo
 
-# 2. 启动管理窗口（按需，旧行为）
+# 2. 启动主窗口（按需，旧行为）
 ./NcuCourseTable.Desktop.exe --window
 
 # 3. 切换到 wallpaper 模式（仅父窗口/样式断言通过，WPF 渲染限制屏幕上不可见）
@@ -295,9 +305,9 @@ python desktop/scripts/verify_both_hosts.py   # 一键串起 wallpaper+bottom �
 
 - **任务栏**：组件运行期间无按钮（`WS_EX_TOOLWINDOW` 生效）。
 - **Alt-Tab**：不出现本组件条目。
-- **托盘**：出现 NotifyIcon（NcuCourseTable 图标），右键菜单含“打开配置 / 登录并刷新课表 / 显示 / 锁定 / 宿主切换 / 透明度 / 开机自启 / 退出”（无“打开管理窗口”，改由单击组件卡片打开）；双击托盘图标直接打开“账号配置”（§9）。
-- **鼠标交互**：未锁定（bottom 可交互）时单击卡片 → 打开管理窗口，左键拖拽 → 移动位置；锁定 / 壁纸层模式下完全穿透，先经托盘“锁定到桌面”解锁或切换层级；组件右键不再弹菜单（控制已统一并入托盘）。
-- **数据外部更新**：执行 `ncu_sdk sync` 或手动编辑 `courses.json` 后，< 1 秒内卡片自动刷新。
+- **托盘**：出现“时”字 NotifyIcon，右键菜单含“打开主窗口 / 插件… / 设置… / 显示或隐藏 / 锁定 / 宿主切换 / 允许拖动 / 退出”；双击托盘图标打开设置面板。
+- **鼠标交互**：未锁定（bottom 可交互）时单击卡片 → 打开主窗口，左键拖拽 → 移动位置；锁定 / 壁纸层模式下完全穿透，需先经托盘解锁或切换层级；控制统一走托盘。
+- **数据外部更新**：插件同步、编辑 `schedule.json` 或手动运行 `ncu_sdk sync` 后，< 1 秒内卡片自动刷新。
 
 ### 6.5 防“显示桌面 / 最小化”消失守卫（bottom 模式，2026-09-04 实测）
 
@@ -330,7 +340,7 @@ wallpaper 模式不需守卫（窗口挂 WorkerW 后不参与显示桌面最小�
 
 - Win11 24H2 部分多壁纸/桌面扩展（Wallpaper Engine、Memoji 桌面背景）会破坏 WorkerW 层级，此时回退到 `bottom` 模式。
 - Win10 LTSC 早期版本不保证 `SHELLDLL_DefView` 位置；本组件以 Win10 22H2 / Win11 23H2+ 为目标。
-- 鼠标在组件“画布”外不会触发穿透关闭；锁定后单击无响应属预期，可经托盘“锁定到桌面”解锁后再单击卡片打开管理窗口。
+- 鼠标在组件“画布”外不会触发穿透关闭；锁定后单击无响应属预期，可经托盘“锁定到桌面”解锁后再单击卡片打开主窗口。
 - “显示桌面”守卫针对 bottom 模式所有已知抑制渠道（SC_MINIMIZE / ShowWindow 最小化 / DWM cloak）做了兜底（§6.5）；若未来系统新增未覆盖的隐藏渠道，组件可能瞬时闪烁后自动恢复（300ms 看门狗）。
 - 组件与 WSL2 / Linux 子系统桌面无直接关系，仅 Windows。
 
@@ -341,41 +351,35 @@ wallpaper 模式不需守卫（窗口挂 WorkerW 后不参与显示桌面最小�
 | 类别 | 路径 |
 |---|---|
 | 工程 | `desktop/NcuCourseTable.Desktop/`（WPF / .NET 8 / MVVM） |
+| 插件契约 | `desktop/Timetable.Plugins.Abstractions/` |
+| 示例插件 | `desktop/plugins/NcuCourseSource/` |
+| 解决方案 | `desktop/Timetable.sln` |
 | 编译产物 | `desktop/NcuCourseTable.Desktop/bin/Debug/net8.0-windows/NcuCourseTable.Desktop.exe` |
-| 样本数据 | `desktop/sample_data/courses.json` |
+| 插件产物 | `.../net8.0-windows/plugins/NcuCourseSource/NcuCourseSource.dll` |
+| 样本数据 | `desktop/sample_data/courses.json`（旧格式迁移样本） |
 | 验证脚本 | `desktop/scripts/verify_embed.py` / `verify_refresh.py` / `verify_both_hosts.py` / `capture_window.py` |
 | 验证截图 | `desktop/verify_refresh_triplet.png` / `desktop/verify_widget_*.png` |
 | 设计 / 选型 | `docs/DESKTOP_EMBED.md`（本文件） |
+| 插件开发 | `docs/PLUGINS.md` |
 | 数据接口 | `docs/API_SPEC.md` + `sdk/ncu_sdk/` |
 
 ---
 
-## 9. 托盘账号配置与登录（新增）
+## 9. 插件与课程数据源（2026-10 改造）
 
-桌面卡片只做展示，网络登录在 Python SDK（ncu_sdk）。托盘新增“身份与数据”入口，
-让账号/密码只填一次、加密保存，之后可随时一键登录并刷新课表：
+核心程序不再包含任何南大专属登录逻辑。插件机制与开发指南见 [`PLUGINS.md`](PLUGINS.md)，
+这里只记录桌面端的接入方式：
 
-- **入口**：托盘菜单“打开配置…” / “登录并刷新课表”，双击托盘图标 = 打开配置。
-- **配置对话框**（`Views/CredentialDialog.xaml`）：账号 + 密码两个必填输入框（占位输入提示），
-  任一为空即禁用保存并红字提示；默认勾选“保存后立即登录并同步课表”。
-- **保存凭据**（`Services/CredentialVault.cs`）：`{账号, 密码}` JSON 后经 Windows DPAPI
-  （`CryptProtectData`，当前用户作用域 + 应用熵）加密写入数据目录 `credentials.bin`，
-  **不落明文**；文件拷走或换用户无法解密，损坏/异常时容错视为“未配置”。
-- **登录**（`Services/LoginService.cs`）：子进程调本地 `ncu_sdk.cli`，凭据只经环境变量
-  `NCU_USERNAME / NCU_PASSWORD` 传递（不进命令行）：
-  `login`（CAS 验证）→ `sync`（当前学期 gmsstu 真课表落库 schedule.db）→
-  `export --format json`（临时文件）→ `JsonStore` 整学期原子导入 `courses.json`
-  （桌面卡片 FileSystemWatcher 自动重绘）。成功 / 失败均有明确弹窗与原因归类
-  （账号密码错误 / 无法连接校园网 / 缺 Python 依赖 / SDK 未找到等）。
-- **环境解析**：python 与 SDK 路径按 `NCU_PYTHON` / `NCU_SDK_DIR` 环境变量 > PATH 探测 /
-  从可执行目录向上探测仓库布局的顺序解析；未找到时给出可操作提示，不静默。
-  **Python 依赖随仓库自带**：`desktop\vendor`（`pip install --target` 产物，requests 等）
-  会被自动并入子进程 `PYTHONPATH`（顺序 vendor → sdk → 既有值），用户**无需**手动
-  `pip install -r requirements.txt`；解释器探测亦经 vendor 自检 `import requests`，
-  缺依赖的解释器不会被误选。可用 `NCU_VENDOR_DIR` 覆盖 vendor 位置。
-  校外环境登录需先连接校园 VPN。
-- **代码位置**：`App.Account.cs`（托盘入口与状态）、`App.Tray.cs`（菜单项）、
-  `Views/CredentialDialog.xaml(.cs)`（对话框）、`Services/CredentialVault.cs` +
-  `Services/LoginService.cs`（存储与执行）。
-- **限制**：`--window`（旧独立窗口）模式不建托盘、不使用本功能；登录成败依赖
-  本机 Python + ncu_sdk + 校园网可达性，属于桌面组件对 SDK 的“遥控”，不是内嵌重实现。
+- **入口**：主窗口顶部「插件」、托盘「插件…」、设置面板「管理插件…」；
+  插件窗口由插件自己提供。
+- **插件契约**：`Timetable.Plugins.Abstractions` 中的 `ITimetablePlugin` / `IPluginHost`。
+  宿主启动时扫描 `<exe>/plugins/*/*.dll`，每个插件使用独立 `AssemblyLoadContext`。
+- **数据隔离**：`IPluginHost.ReplaceEvents(pluginId, ...)` 只替换该插件来源的日程；
+  手动日程与待办完全不受影响。
+- **南昌大学课程源**（`desktop/plugins/NcuCourseSource/`）：
+  - 账号配置与 `credentials.bin`（DPAPI 加密，熵与旧版一致，旧凭据可直接使用）；
+  - 子进程调 `ncu_sdk.cli`：`login` → `sync` → `export`，再解析 JSON 导入；
+  - 也支持直接导入 ncu_sdk 导出的 JSON、移除已导入课程；
+  - 环境解析：`NCU_PYTHON` / `NCU_SDK_DIR` / `NCU_VENDOR_DIR` > PATH / 向上探测；
+    `desktop/vendor` 自动并入 `PYTHONPATH`；校外需校园 VPN。
+- **限制**：插件为普通 .NET 程序，只应安装可信来源；宿主不会自动下载插件。

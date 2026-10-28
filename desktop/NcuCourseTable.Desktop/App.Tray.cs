@@ -11,7 +11,7 @@ namespace NcuCourseTable.Desktop;
 
 /// <summary>
 /// 托盘常驻（widget 模式）—— 与主界面一致的 Apple 浅色材质快捷入口：
-/// 状态头（周次 / 账号）→ 课程中心 / 登录 / 设置 → 组件显隐 / 锁定 / 层级 → 退出。
+/// 状态头（周次 / 待办）→ 主窗口 / 插件 / 设置 → 组件显隐 / 锁定 / 层级 → 退出。
 /// 双击图标仍打开设置面板；菜单打开时统一回刷文案与可用状态。
 /// </summary>
 public partial class App
@@ -19,12 +19,8 @@ public partial class App
     private NotifyIcon? _tray;
 
     private ToolStripMenuItem? _traySubheader;
-    private ToolStripMenuItem? _trayLogin;
+    private ToolStripMenuItem? _traySync;
     private ToolStripMenuItem? _trayWidget;
-    private ToolStripMenuItem? _trayLock;
-    private ToolStripMenuItem? _trayDraggable;
-    private ToolStripMenuItem? _trayHostBottom;
-    private ToolStripMenuItem? _trayHostWallpaper;
 
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "NcuCourseTable.Widget";
@@ -59,7 +55,7 @@ public partial class App
             RefreshTrayChecks();
         };
 
-        menu.Items.Add(new ToolStripMenuItem("南昌大学 · 课程表")
+        menu.Items.Add(new ToolStripMenuItem("时间表")
         {
             Enabled = false,
             Tag = "header",
@@ -77,28 +73,24 @@ public partial class App
         menu.Items.Add(_traySubheader);
         menu.Items.Add(new ToolStripSeparator());
 
-        var center = new ToolStripMenuItem("课程中心")
+        var center = new ToolStripMenuItem("打开主窗口")
         {
             Font = new Font(menu.Font, FontStyle.Bold),
-            ToolTipText = "完整课表管理窗口（周视图 / 增删改课程）",
+            ToolTipText = "完整时间表：周视图、日程增删改、待办管理",
         };
         center.Click += (_, _) => ShowManager();
         menu.Items.Add(center);
 
-        _trayLogin = new ToolStripMenuItem("登录并刷新课表");
-        _trayLogin.Click += (_, _) =>
-        {
-            if (_vault?.Read() is not null) LoginAndSync();
-            else ShowCredentialDialog();
-        };
-        menu.Items.Add(_trayLogin);
-
         var settings = new ToolStripMenuItem("设置…")
         {
-            ToolTipText = "账号、桌面组件显隐 / 锁定 / 层级 / 透明度、开机自启",
+            ToolTipText = "学期、桌面组件、插件、坚果云同步与开机自启",
         };
         settings.Click += (_, _) => ShowSettings();
         menu.Items.Add(settings);
+
+        _traySync = new ToolStripMenuItem("立即同步到坚果云");
+        _traySync.Click += async (_, _) => await SyncNutstoreNowAsync(announce: true);
+        menu.Items.Add(_traySync);
         menu.Items.Add(new ToolStripSeparator());
 
         _trayWidget = new ToolStripMenuItem("隐藏桌面组件");
@@ -108,44 +100,6 @@ public partial class App
             RefreshTrayChecks();
         };
         menu.Items.Add(_trayWidget);
-
-        _trayLock = new ToolStripMenuItem("锁定穿透");
-        _trayLock.Click += (_, _) =>
-        {
-            SetWidgetLocked(!IsWidgetLocked);
-            RefreshTrayChecks();
-        };
-        menu.Items.Add(_trayLock);
-
-        _trayDraggable = new ToolStripMenuItem("允许拖动");
-        _trayDraggable.Click += (_, _) =>
-        {
-            bool on = !(IsWidgetDraggable && !IsWidgetLocked);
-            if (on && IsWidgetLocked) SetWidgetLocked(false);
-            SetWidgetDraggable(on);
-            RefreshTrayChecks();
-        };
-        menu.Items.Add(_trayDraggable);
-
-        var host = new ToolStripMenuItem("桌面层级");
-        _trayHostBottom = new ToolStripMenuItem("✓ 图标上层（可交互）");
-        _trayHostBottom.Click += (_, _) =>
-        {
-            SwitchHost(DesktopHostKind.BottomWindow);
-            RefreshTrayChecks();
-        };
-        _trayHostWallpaper = new ToolStripMenuItem("   壁纸层（纯展示）")
-        {
-            ToolTipText = "实验模式：WPF 渲染限制下壁纸层可能不可见",
-        };
-        _trayHostWallpaper.Click += (_, _) =>
-        {
-            SwitchHost(DesktopHostKind.WallpaperWorkerW);
-            RefreshTrayChecks();
-        };
-        host.DropDownItems.Add(_trayHostBottom);
-        host.DropDownItems.Add(_trayHostWallpaper);
-        menu.Items.Add(host);
 
         menu.Items.Add(new ToolStripSeparator());
         var exit = new ToolStripMenuItem("退出") { Tag = "danger" };
@@ -157,7 +111,7 @@ public partial class App
         _tray = new NotifyIcon
         {
             Icon = MakeTrayIcon(),
-            Text = "南昌大学课程表",
+            Text = "时间表",
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -179,57 +133,34 @@ public partial class App
     /// <summary>托盘状态文案 + 菜单动态项 + 设置面板回刷。</summary>
     private void RefreshTrayChecks()
     {
-        string saved = _vault?.UsernameOrEmpty ?? "";
-        bool hasAccount = saved.Length > 0;
-        string status = hasAccount ? $"账号 {MaskAccount(saved)}" : "未配置账号";
+        int pending = _store?.Data.Todos.Count(t => !t.Done) ?? 0;
+        string todo = pending > 0 ? $"待办 {pending}" : "暂无待办";
         string term = TermProgressText();
 
         if (_traySubheader is not null)
         {
-            _traySubheader.Text = $"{term}  ·  {status}";
+            _traySubheader.Text = $"{term}  ·  {todo}";
         }
 
-        if (_trayLogin is not null)
+        if (_traySync is not null)
         {
-            _trayLogin.Text = hasAccount ? "登录并刷新课表" : "配置账号并登录…";
-            _trayLogin.ToolTipText = hasAccount
-                ? "使用已保存的账号密码登录并同步当前学期课表"
-                : "打开账号配置：填写学号 / 密码（DPAPI 加密保存）";
+            bool configured = NutstoreConfigured;
+            _traySync.Visible = configured;
+            _traySync.Text = NutstoreBusy ? "坚果云同步中…" : "立即同步到坚果云";
+            _traySync.Enabled = configured && !NutstoreBusy;
+            _traySync.ToolTipText = string.IsNullOrWhiteSpace(NutstoreLastSyncText)
+                ? "通过 WebDAV 与坚果云双向同步"
+                : NutstoreLastSyncText;
         }
 
-        bool wallpaper = CurrentHost == DesktopHostKind.WallpaperWorkerW;
         if (_trayWidget is not null)
         {
             _trayWidget.Text = IsWidgetShown ? "隐藏桌面组件" : "显示桌面组件";
         }
-        if (_trayLock is not null)
-        {
-            _trayLock.Enabled = !wallpaper;
-            _trayLock.Text = wallpaper
-                ? "锁定穿透（壁纸层不可用）"
-                : (IsWidgetLocked ? "取消锁定穿透" : "锁定穿透");
-        }
-        if (_trayDraggable is not null)
-        {
-            bool active = !wallpaper && !IsWidgetLocked && IsWidgetDraggable;
-            _trayDraggable.Text = (active ? "✓ " : "   ") + "允许拖动";
-            _trayDraggable.Enabled = !wallpaper;
-            _trayDraggable.ToolTipText = wallpaper
-                ? "壁纸层固定穿透，无法拖动"
-                : "开启后可左键拖动组件；开启时会自动取消锁定穿透";
-        }
-        if (_trayHostBottom is not null)
-        {
-            _trayHostBottom.Text = (wallpaper ? "   " : "✓ ") + "图标上层（可交互）";
-        }
-        if (_trayHostWallpaper is not null)
-        {
-            _trayHostWallpaper.Text = (wallpaper ? "✓ " : "   ") + "壁纸层（纯展示）";
-        }
 
         if (_tray is not null)
         {
-            string tip = $"南昌大学课程表 · {term} · {status}（双击设置）";
+            string tip = $"时间表 · {term} · {todo}（双击设置）";
             _tray.Text = tip.Length <= 63 ? tip : tip[..63];
         }
 
@@ -290,7 +221,7 @@ public partial class App
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show($"设置开机自启失败：{ex.Message}",
-                "南昌大学课程表", System.Windows.MessageBoxButton.OK,
+                "时间表", System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -312,7 +243,7 @@ public partial class App
             g.DrawPath(border, shape);
 
             using var f = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold, GraphicsUnit.Pixel);
-            TextRenderer.DrawText(g, "课", f, new Rectangle(0, 0, 16, 16), Color.White,
+            TextRenderer.DrawText(g, "时", f, new Rectangle(0, 0, 16, 16), Color.White,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
         IntPtr h = bmp.GetHicon();

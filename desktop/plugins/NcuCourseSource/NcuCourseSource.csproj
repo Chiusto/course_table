@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>NcuCourseSource</RootNamespace>
+    <AssemblyName>NcuCourseSource</AssemblyName>
+    <Version>1.0.0</Version>
+    <Product>南昌大学课程源（时间表插件）</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Timetable.Plugins.Abstractions\Timetable.Plugins.Abstractions.csproj"
+                      Private="false" />
+  </ItemGroup>
+
+  <!-- 构建后自动部署到宿主输出目录 plugins/NcuCourseSource/，启动即可被发现 -->
+  <Target Name="CopyPluginToHost" AfterTargets="Build">
+    <PropertyGroup>
+      <HostPluginDir>$(MSBuildThisFileDirectory)..\..\NcuCourseTable.Desktop\bin\$(Configuration)\net8.0-windows\plugins\$(AssemblyName)\</HostPluginDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HostPluginDir)" />
+    <ItemGroup>
+      <PluginArtifacts Include="$(TargetDir)$(AssemblyName).dll" />
+      <PluginArtifacts Include="$(TargetDir)$(AssemblyName).pdb" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginArtifacts)" DestinationFolder="$(HostPluginDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

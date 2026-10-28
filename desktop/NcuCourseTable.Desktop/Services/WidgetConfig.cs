@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace NcuCourseTable.Desktop.Services;
 
 /// <summary>
-/// 桌面小组件本地设置（widget.json，存放在数据目录，与 courses.json 同层）：
+/// 桌面小组件本地设置（widget.json，存放在数据目录，与 schedule.json 同层）：
 /// 屏幕位置 / 透明度 / 是否锁定(点击穿透) / 是否允许拖动 / 宿主策略。
 /// 纯文件、容错读写 —— 损坏或缺失时回退默认值。
 /// </summary>

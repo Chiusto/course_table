@@ -1,23 +1,20 @@
-using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
-namespace NcuCourseTable.Desktop.Services;
+namespace NcuCourseSource;
 
 /// <summary>
-/// 账号凭据保险箱（credentials.bin，存放在数据目录，与 widget.json / courses.json 同层）。
-/// 安全设计：明文永不落盘 —— {username, password} 序列化后交给 Windows DPAPI
-/// （CryptProtectData，当前用户作用域）加密成二进制；只有本机当前 Windows 用户能解开，
-/// 文件被拷走或换用户登录都无法还原密码。损坏/非本用户解密失败时容错返回 null
-/// （调用方按“未配置”处理），读写风格与 WidgetConfig / JsonStore 一致（原子写：先 .tmp 再替换）。
+/// 账号凭据保险箱（数据目录下的 credentials.bin，与旧版桌面端兼容）。
+/// 明文永不落盘：{username,password} 经 Windows DPAPI（当前用户）加密；
+/// 文件拷走或换 Windows 用户都无法还原密码。损坏时按“未配置”处理。
 /// </summary>
 public sealed class CredentialVault
 {
     public const string FileName = "credentials.bin";
 
-    /// <summary>DPAPI 可选熵：与本应用绑定，防止用其它工具直接替换密文。</summary>
+    // 与旧版桌面端保持一致的熵，已保存的凭据迁移到插件后仍可解密
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NcuCourseTable.Desktop.Credentials.v1");
 
     public string Dir { get; }
@@ -29,10 +26,8 @@ public sealed class CredentialVault
         Dir = dir;
     }
 
-    /// <summary>数据目录下是否已存在凭据文件（含损坏文件，真正可用性以 Read() 为准）。</summary>
     public bool HasCredentials => File.Exists(FilePath);
 
-    /// <summary>读取已保存的账号密码；未保存 / 损坏 / 非本用户解密失败时返回 null。</summary>
     public (string Username, string Password)? Read()
     {
         try
@@ -51,10 +46,8 @@ public sealed class CredentialVault
         }
     }
 
-    /// <summary>已配置的账号名（供托盘菜单脱敏展示）；未配置返回空串。</summary>
     public string UsernameOrEmpty => Read()?.Username ?? "";
 
-    /// <summary>加密保存（原子写：先写 .tmp 再替换，与 widget.json 相同）。</summary>
     public void Save(string username, string password)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
@@ -69,8 +62,6 @@ public sealed class CredentialVault
         if (File.Exists(FilePath)) File.Delete(FilePath);
         File.Move(tmp, FilePath);
     }
-
-    // ---------------------------------------------------------------- DPAPI
 
     [StructLayout(LayoutKind.Sequential)]
     private struct DataBlob
@@ -94,7 +85,6 @@ public sealed class CredentialVault
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr LocalFree(IntPtr hMem);
 
-    /// <summary>DPAPI 输出 blob 由 Crypt32 内部以 LocalAlloc 分配，须用 LocalFree 释放。</summary>
     private static void FreeOutputBlob(DataBlob blob)
     {
         if (blob.pbData != IntPtr.Zero)
@@ -106,12 +96,12 @@ public sealed class CredentialVault
     private static byte[] Protect(byte[] plain)
     {
         DataBlob inBlob = ToBlob(plain);
-        DataBlob entropy = ToBlob(Entropy); // 熵以 DATA_BLOB 形式传入（指向数据块）
+        DataBlob entropy = ToBlob(Entropy);
         DataBlob outBlob = default;
         try
         {
             if (!CryptProtectData(ref inBlob, null, ref entropy, IntPtr.Zero, IntPtr.Zero,
-                    0 /* 默认当前用户作用域，无 UI */, out outBlob))
+                    0, out outBlob))
             {
                 throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             }
@@ -139,7 +129,7 @@ public sealed class CredentialVault
             {
                 throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             }
-            if (descr != IntPtr.Zero) LocalFree(descr); // 描述串（未使用，防御性释放）
+            if (descr != IntPtr.Zero) LocalFree(descr);
             byte[] result = new byte[outBlob.cbData];
             if (result.Length > 0) Marshal.Copy(outBlob.pbData, result, 0, result.Length);
             return result;

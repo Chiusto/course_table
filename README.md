@@ -1,182 +1,175 @@
-# 南昌大学课程表 SDK（ncu_sdk）
+# 时间表（Timetable）
 
-依据 `docs/API_SPEC.md`（南昌大学课程表接口说明）实现的自研课程表数据层。
-覆盖：CAS 统一认证、融合门户 portal-api、研究生系统 gmsstu 真课表、本地
-SQLite 缓存与查询、ICS 日历导出。
+一个 Windows 桌面时间表应用：周视图日程、待办清单、常驻桌面的信息组件，以及可选的
+数据源插件。核心程序不绑定任何学校或教务系统；课程同步等能力由插件提供。
 
-> 接口约定全部来自 `docs/API_SPEC.md`，本文“对应文档”列即出处。
+当前仓库自带示例插件 **南昌大学课程源**，它把原先内置的 CAS 登录、gmsstu 课表同步、
+凭据存储与 JSON 导入全部迁出到独立 DLL 中。
+
+## 功能
+
+**日程**
+- 周视图（周一 ~ 周日 × 节次），支持时间轴、今日高亮与“现在”时间线。
+- 手动新建 / 编辑 / 删除日程：标题、分类、地点、参与人、备注、颜色。
+- 每周重复（支持 `1-16周`、`1-9周(单)` 等表达式）或仅一次（指定日期）。
+- 空白格双击新建，日程块双击编辑；时段冲突软提示。
+- 学期名称、第 1 周周一、总周数可在设置中调整。
+
+**待办**
+- 快速添加（Enter 保存）与详细编辑（截止日期、优先级、备注）。
+- 未完成 / 全部 / 已完成筛选；逾期、今天、即将到期用颜色区分。
+- 完成、恢复、删除、清除已完成；侧栏角标与桌面组件同步展示。
+
+**坚果云同步**
+- 通过坚果云 WebDAV 在多设备间双向同步日程与待办；应用密码以 DPAPI 密文保存在本机。
+- 启动时与本地修改后自动同步（可关闭），也可在设置面板或托盘菜单手动同步。
+- 以条目 Id + 更新时间做三方合并：单侧删除会传播，双方改同一条目时保留较新版本。
+
+**其他**
+- 桌面玻璃卡片：今日安排、周密度点阵、下一项与未完成待办清单；可拖动、锁定穿透、调整层级。
+- 托盘常驻：打开主窗口 / 设置 / 坚果云同步，切换桌面组件显隐；组件层级、锁定与拖动在设置中调整。
+- 数据本地 JSON 存储，原子写入并保留 `.bak` 备份；支持外部改动自动刷新。
+- 数据源插件可整批替换“自己的”日程，不影响手动日程与待办。
+
+## 快速开始
+
+需要 .NET SDK 8+。
+
+```bash
+# 构建（宿主 + 插件契约 + 南昌大学课程源插件）
+cd desktop
+dotnet build Timetable.sln -c Debug
+
+# 打开完整管理窗口（开发/首次配置推荐）
+./NcuCourseTable.Desktop/bin/Debug/net8.0-windows/NcuCourseTable.Desktop.exe --window
+
+# 或启动桌面组件（默认：托盘常驻 + 桌面卡片，不弹主窗口）
+./NcuCourseTable.Desktop/bin/Debug/net8.0-windows/NcuCourseTable.Desktop.exe
+```
+
+Windows 下也可以使用仓库根目录脚本：
+
+```bat
+start.bat build
+start.bat app --window
+start.bat app
+```
+
+```bash
+./start.sh build
+./start.sh app --window
+./start.sh app
+```
+
+命令行参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--data <目录>` / `-d` | 指定数据目录 |
+| `--window` | 启动完整主窗口（默认是桌面组件模式） |
+| `--host bottom\|wallpaper` | 桌面组件宿主层；`wallpaper` 受 WPF 限制通常不可见 |
+
+## 数据与迁移
+
+默认数据目录：`--data` > `TIMETABLE_DATA`（兼容 `NCU_COURSE_DATA`）> exe 同级 `data/` >
+`%LocalAppData%\NcuCourseTable`。
+
+| 文件 | 内容 |
+|---|---|
+| `schedule.json` | 日程、待办、学期、节次时间（主数据） |
+| `courses.json` | 旧版课程数据；首次载入自动迁移到 `schedule.json`，原文件保留 |
+| `widget.json` | 桌面组件位置、透明度、锁定、宿主等 |
+| `credentials.bin` | 插件保存的登录凭据（DPAPI 加密，不落明文） |
+| `schedule.db` | 南大课程源插件使用的 ncu_sdk 会话缓存 |
+| `nutstore.json` | 坚果云 WebDAV 配置（应用密码 DPAPI 加密） |
+| `nutstore-state.json` | 上次同步基线与 ETag（仅本机，用于三方合并） |
+
+旧版数据迁移后，课程会标记为 `Source: "ncu"`；再次同步时只替换这些插件导入的课程。
+启用坚果云同步后，`schedule.json` 会写入坚果云 WebDAV 的指定文件；桌面组件位置与
+插件凭据仍只保存在本机。
+
+## 插件
+
+- 插件契约：`desktop/Timetable.Plugins.Abstractions/`
+- 插件目录：`<exe>/plugins/<插件目录>/*.dll`
+- 详细说明与新插件模板：[`docs/PLUGINS.md`](docs/PLUGINS.md)
+
+内置插件 **南昌大学课程源**：
+
+1. 打开主窗口 → 顶部「插件」→「南昌大学课程源」→「打开」。
+2. 「账号配置…」填写统一身份认证账号（DPAPI 加密保存）。
+3. 「登录并同步课表」：调用本地 Python `ncu_sdk` 完成 CAS 登录 → gmsstu 同步 →
+   JSON 导出 → 插件导入；也可直接「导入 JSON…」。
+4. 同步只替换本插件导入的课程，手动日程 / 待办不受影响。
+
+插件依赖本机 Python 与仓库 `sdk/ncu_sdk`；带 `desktop/vendor` 时无需手动
+`pip install`。环境变量：`NCU_PYTHON`、`NCU_SDK_DIR`、`NCU_VENDOR_DIR`。
+校外需先连接校园 VPN。
+
+## 坚果云同步
+
+1. 在坚果云网页端「账户信息 → 安全选项 → 第三方应用管理」添加应用，获取**应用密码**
+   （不是网页登录密码）。
+2. 主窗口 →「设置」→「同步」：填写坚果云账号邮箱与应用密码；WebDAV 地址默认
+   `https://dav.jianguoyun.com/dav/`，远程文件默认 `Timetable/schedule.json`
+   （需要修改时展开「高级设置」）。
+3. 「保存」→「测试连接」→「立即同步」。启用「自动同步」后，启动时与本地修改后会自动
+   同步；托盘菜单也可随时触发。
+
+合并策略：首次同步把云端与本地条目按 Id 取并集；之后用本地保存的同步基线做三方合并，
+单侧新增 / 修改 / 删除会传播，双方改同一条目时按 `UpdatedAt` 保留较新版本，删除与修改
+冲突时优先保留修改后的内容。同步失败不会覆盖本地数据；坚果云文件历史版本可找回旧档。
+仅支持 HTTPS WebDAV，也可填写其他兼容 WebDAV 服务的地址。
 
 ## 目录结构
 
 ```
 course_table/
-├── docs/                          # 参考文档（需求与接口约定）
-│   ├── API_SPEC.md                # ★ 接口规范：CAS / portal-api / gmsstu
-│   ├── RESEARCH.md / test.md      # 占位文档（无实质内容）
-├── sdk/
-│   └── ncu_sdk/
-│       ├── __init__.py            # 包入口，导出全部公开 API
-│       ├── config.py              # 端点常量与 Settings（文档 2/3/4 节）
-│       ├── errors.py              # 分层异常体系
-│       ├── models.py              # Course / Section / CalendarEvent / TeachingWeek
-│       ├── weeks.py               # 周次表达式解析（"5-15周"、"6-6周"、单双周…）
-│       ├── parser.py              # gmsstu 单元格解析 + 连续节次合并
-│       ├── cas.py                 # CASClient（文档第 2 节）
-│       ├── portal.py              # PortalClient（文档第 3 节）
-│       ├── gmsstu.py              # GmsstuClient（文档第 4 节 ★ 真课表）
-│       ├── schedule.py            # NCUClient 顶层编排（登录/同步/查询/教学周）
-│       ├── storage.py             # SQLite（文档第 6 节建议）
-│       ├── ics.py                 # iCalendar 导出
-│       ├── demo.py                # 内置样例数据（取自 API_SPEC.md）
-│       └── cli.py                 # 命令行入口
-├── tests/
-│   ├── fixtures/                  # 文档原文样例（JSON）
-│   └── test_*.py                  # 52 个离线单元测试
-└── README.md
+├── desktop/
+│   ├── Timetable.sln
+│   ├── NcuCourseTable.Desktop/       # 时间表宿主（WPF / .NET 8）
+│   │   ├── Models/                  # ScheduleEvent / TodoItem / StoreData
+│   │   ├── Services/                # DataStore / 插件宿主 / 坚果云同步与三方合并
+│   │   ├── ViewModels/              # MainViewModel
+│   │   └── Views/                   # 周视图、详情/待办、对话框、桌面组件
+│   ├── Timetable.Plugins.Abstractions/
+│   └── plugins/
+│       └── NcuCourseSource/         # 南大课程源插件（登录/同步/JSON 导入）
+├── sdk/ncu_sdk/                     # 课程数据 SDK（插件子进程调用）
+├── tests/                           # ncu_sdk 离线单元测试
+├── docs/
+│   ├── API_SPEC.md                  # 南大教务接口约定
+│   ├── PLUGINS.md                   # 插件契约与开发指南
+│   └── DESKTOP_EMBED.md             # 桌面组件嵌入实现
+└── start.sh / start.bat
 ```
 
-## 与参考文档的对应关系
+## 南大课程 SDK（插件后端）
 
-| docs/API_SPEC.md | 实现 |
-|---|---|
-| 1. 总览（两套系统勿混用） | `portal.py` 与 `gmsstu.py` 各自独立，不做混用 |
-| 2. CAS 认证（publicKey / execution / ticket） | `cas.py`：抽取隐藏域→POST→302 取 ticket，支持 RSA 加密回退 |
-| 3.1 请求头 `x-id-token` 等 | `portal.py::headers`；无 token 返回 `code:-1` → `PermissionError_` |
-| 3.2-3.5 七个端点 | `PortalClient.get_events / get_section / get_week_of_teaching / get_schedule / get_calendar / get_personal_calendar / get_subscribed` |
-| 4.1 gmsstu Cookie 认证 | `GmsstuClient.require_session`（`cn_com_southsoft_gmis_stu`） |
-| 4.2 混淆 URL / kblx=xs / termcode | `config.py::GMSSTU_OBFUSCATED_PATH`；termcode 生成/解析；解析正则原样保留在 `parser.py::_STRICT_RE` |
-| 4.2 单元格正则 + 实测课表 | `parse_cell`；`demo.py` 内建实测数据，测试逐条断言 |
-| 5. Python SDK 示例 | `NCUClient` 即示例的工程化封装 |
-| 6. 开发建议 | SQLite 索引 `(termcode, weekday, start_section, end_section)`；`getSection` 本地缓存；周次以 gmsstu 为准、portal 仅校准 |
-
-## 快速开始
-
-依赖：Python ≥ 3.10、`requests`（RSA 加密登录时才需要 `cryptography`）。
+`ncu_sdk` 覆盖 CAS 认证、融合门户 portal-api、gmsstu 真课表、SQLite 缓存与 ICS 导出，
+接口依据 [`docs/API_SPEC.md`](docs/API_SPEC.md)。
 
 ```bash
 pip install -r requirements.txt
-
-# 1) 凭据（建议环境变量，勿写死在代码里）
-export NCU_USERNAME=你的学号
-export NCU_PASSWORD='你的密码'
-export NCU_ID_TOKEN=eyJ...        # 可选：跳过登录，直接用浏览器 localStorage 的 token
-
-# 2) 登录验证
+export NCU_USERNAME=学号 NCU_PASSWORD='密码'   # 或 NCU_ID_TOKEN
 python -m ncu_sdk.cli --db schedule.db login
-
-# 3) 同步课表（termcode 缺省按当前日期推算）
 python -m ncu_sdk.cli --db schedule.db sync --term 202620271
-
-# 4) 查询：第 3 周课表 / 今日课程 / 节次时间表
-python -m ncu_sdk.cli --db schedule.db show  --term 202620271 --week 3
 python -m ncu_sdk.cli --db schedule.db today
-python -m ncu_sdk.cli --db schedule.db sections
-
-# 5) 导出 .ics / .json（ics 需先指定学期第一周周一）
-python -m ncu_sdk.cli --db schedule.db \
-       --term-start 202620271=2026-08-31 export --term 202620271 --format ics
-
-# 6) 无网络离线演示（使用文档中的实测数据）
-python -m ncu_sdk.cli --db demo.db demo
+python -m ncu_sdk.cli --db schedule.db export --term 202620271 --format json
 ```
 
-注意：SDK 包在 `sdk/ncu_sdk`，运行 CLI 需先 `cd sdk` 或设置
-`PYTHONPATH=sdk`（示例中已包含）。
-
-### 代码方式
-
-```python
-from ncu_sdk import NCUClient
-from ncu_sdk.config import Settings
-
-client = NCUClient(
-    username="你的学号",
-    password="***",
-    settings=Settings(db_path="schedule.db",
-                      term_start_dates={"202620271": "2026-08-31"}),
-)
-client.sync("202620271")                  # 拉 gmsstu + 缓存节次表
-week, courses = client.today_schedule()   # (第几周, 今天的课)
-for c in courses:
-    print(c.describe(client.sections()))
-```
-
-## 核心逻辑要点
-
-1. **连续节次合并**：gmsstu 返回“每节一行”，如周一第 6/7/8 节单元格文本相同，
-   `parser._merge_sections` 按 `(周几, 课程名, 原文)` 分组、`jcid` 连续则合并为
-   `start_section=6, end_section=8`，与文档实测“周一 6-8 节机器学习”一致。
-2. **周次规则**：`weeks.py` 支持 `5-15周`/`6-6周`/多段/单双周；是否某周上课
-   以 gmsstu 的 weeks 字符串为准（文档第 6 节）。
-3. **教学周判定**：优先 `portal getWeekOfTeaching`（文档 3.5，-1 表示未开学），
-   不可用时回退本地 `term_start_dates` 推算；纯本地运行时第 3.5 节样例（-1）会
-   正确触发回退。
-4. **存储**：课程表按 `(termcode, weekday, start_section, end_section)` 索引
-   （文档第 6 节）；节次表带有效期缓存（默认 30 天）；同步为整学期原子替换。
-5. **健壮性**：gmsstu 混淆路径的 hex 尾随登录会话轮换，静态路径失效（500/404）时
-   `GmsstuClient` 自动在会话内重新发现课表端点（拉首页 → 找含 kblx 的课表页 →
-   提取其 POST url），无需人工抓包；CAS 开启密码加密时自动 RSA（需 cryptography）。
-
-## 测试
-
-全部离线（用 `tests/fixtures/*.json` 的文档原文样例 + 假 Session），不访问校园网：
+SDK 位于 `sdk/ncu_sdk`，运行 CLI 需 `cd sdk` 或设置 `PYTHONPATH=sdk`。
+离线单测：
 
 ```bash
 cd tests
 python -m unittest discover -s . -p "test_*.py"
-# Ran 52 tests ... OK
 ```
 
 ## 说明与边界
 
-- 账号/密码不内置：运行期通过参数或环境变量注入（SDK 内置样例仅用于离线演示）。
-- 融合门户 `x-id-token` 由前端写入 localStorage，自动化登录不一定能拿到；
-  失败时请从浏览器复制 token 传入（`PortalClient(token=...)` / `NCU_ID_TOKEN`）。
-  课表主体在 gmsstu，portal 登录失败不影响同步。
-- `demo.py` 中个别课程（数据科学与工程 / 最优化 / 自然辩证法）的周次与教室在
-  文档中未给出，以标注“示例值”的占位补全，仅用于演示解析与合并逻辑。
-
----
-
-## 桌面组件（Windows 桌面嵌入）
-
-> 详见 [`docs/DESKTOP_EMBED.md`](docs/DESKTOP_EMBED.md)。本节只做入口摘要。
-
-WPF(.NET 8) 实现，常驻托盘、把深色玻璃卡片绘制在系统桌面层（默认 bottom 模式：置底、图标之上、不占任务栏、不弹应用窗口、不进 Alt-Tab；wallpaper 模式因 WPF 渲染限制目前不可见，保留代码路径待换非 WPF 渲染层）。`ncu_sdk sync/import` 一导出，组件 < 1 秒自动重绘。
-
-```bash
-# 构建
-cd desktop
-"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" build NcuCourseTable.Desktop -c Debug
-
-# 启动组件（默认 bottom 模式；常驻托盘，真实可见）
-./NcuCourseTable.Desktop/bin/Debug/net8.0-windows/NcuCourseTable.Desktop.exe --demo
-
-# 显式打开管理窗口（按需；旧窗口行为）
-./NcuCourseTable.Desktop.exe --window
-
-# 切到 wallpaper 模式（WPF 下仅父窗口正确挂载，屏幕上不渲染）
-./NcuCourseTable.Desktop.exe --host wallpaper
-
-# 验证嵌入
-python desktop/scripts/verify_embed.py wallpaper
-python desktop/scripts/verify_embed.py bottom
-python desktop/scripts/verify_refresh.py
-python desktop/scripts/verify_both_hosts.py   # 一键 wallpaper+bottom 联合断言
-```
-
-技术选型：WPF + Win32 互操作（P/Invoke WorkerW/Progman/SHELLDLL_DefView + WS_EX_TOOLWINDOW/TRANSPARENT）。参考开源：TrafficMonitor（拖拽）、Rainmeter `Library/System.cpp`（桌面宿主挂载参考）、shiguangschedule（实体字段）。
-
-**托盘与设置面板**：托盘菜单为「课程中心 / 设置… / 退出」，双击托盘图标 = 设置面板；
-小组件显隐、锁定穿透、桌面层级、透明度、开机自启、立即刷新等开关集中在设置面板
-（Views/SettingsWindow）。登录入口在设置面板与课程中心内（托盘不再放登录项）。
-「课程中心」（完整管理窗口）可经托盘菜单或设置面板打开，桌面组件卡片单击亦可。
-账号配置（DPAPI 加密）在设置面板与课程中心均有入口；保存凭据后一键「登录并刷新课表」。
-桌面端以子进程调本地 `ncu_sdk.cli` 完成 login → sync → export → 原子导入，卡片自动刷新；
-凭据经 Windows DPAPI 加密存于数据目录 `credentials.bin`（不落明文）。python / SDK 路径自动
-探测（PYTHONPATH 自动并入 `<SDK根>\sdk` 与 `desktop\vendor`，无需手动设置环境变量），
-亦可用 `NCU_PYTHON` / `NCU_SDK_DIR` 环境变量覆盖；校外需先连校园 VPN。详见
-[`docs/DESKTOP_EMBED.md`](docs/DESKTOP_EMBED.md) §9。
-
-> **WPF 与 WorkerW 不兼容** —— SetParent 后窗口内容不到屏幕，原因与替代方案详见 `docs/DESKTOP_EMBED.md` §3。
-
+- 除南昌大学课程源插件外，核心程序不包含任何学校专属逻辑。
+- 插件是普通 .NET 程序，拥有与宿主相同的本机权限；只安装可信来源的插件。
+- 桌面组件 `wallpaper` 模式在 WPF 下受渲染限制可能不可见，推荐默认 `bottom`。
+- 默认所有数据保存在本机；启用坚果云同步后，`schedule.json` 会上传到你所配置的坚果云
+  WebDAV 文件。应用密码只以 DPAPI 密文保存在本机，不会上传。
